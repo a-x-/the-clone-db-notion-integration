@@ -27,7 +27,7 @@
 - ✅ Proper ES modules structure
 - ✅ CORS headers properly implemented
 - ✅ **Fixed relation properties handling** - filters out problematic relation/rollup/formula properties
-- ✅ **Simplified to flat list approach** - STEP 1: copies all data as flat list, STEP 2 will restore hierarchy
+- ✅ **Two-stage cloning implemented** - STEP 1: copies all data as flat list, STEP 2: adds Sub-items field and restores hierarchy
 
 ### 📁 Project Structure
 
@@ -83,8 +83,8 @@ npm run lint:fix  # Auto-fix formatting issues
 
 **Two-Stage Cloning Approach**:
 
-- **STEP 1**: Copy all database structure and content as flat list (currently implemented)
-- **STEP 2**: Restore hierarchical relationships using relation properties (planned)
+- **STEP 1**: Copy all database structure and content as flat list ✅
+- **STEP 2**: Add Sub-items field and restore hierarchical relationships ✅
 
 **Property Filtering**: The cloner automatically filters out problematic properties during database copying:
 

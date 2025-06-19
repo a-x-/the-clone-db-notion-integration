@@ -224,7 +224,7 @@ async function restoreHierarchy(sourceDatabaseId: string, targetDatabaseId: stri
   // Create mapping from source to target pages (by title or other unique identifier)
   const pageMapping = createPageMapping(sourcePages, targetPages);
   
-  // Find hierarchical relationships in source pages
+  // Find hierarchical relationships in source pages - look specifically for Sub-items field
   const relationships = findHierarchicalRelationships(sourcePages);
   
   console.log(`🔗 Found ${relationships.length} hierarchical relationships to restore`);
@@ -294,32 +294,32 @@ function getPageTitle(page: any): string | null {
   return null;
 }
 
-// Find hierarchical relationships in source pages 
+// Find hierarchical relationships in source pages - look specifically for Sub-items field
 function findHierarchicalRelationships(sourcePages: any[]): Array<{parentId: string, childId: string}> {
   const relationships: Array<{parentId: string, childId: string}> = [];
   
   for (const page of sourcePages) {
-    if (page.properties) {
-      // Look for relation properties that might indicate hierarchy
-      for (const [key, property] of Object.entries(page.properties)) {
-        if ((property as any).type === 'relation') {
-          const relationData = (property as any).relation;
-          if (relationData && relationData.length > 0) {
-            // If this page has relation to other pages, those might be its sub-items
-            for (const relatedPage of relationData) {
-              if (relatedPage.id) {
-                relationships.push({
-                  parentId: page.id,
-                  childId: relatedPage.id
-                });
-              }
-            }
+    if (page?.properties?.["Sub-items"]) {
+      const subItemsProperty = page.properties["Sub-items"];
+      
+      // Check if this is a relation property with sub-items
+      if (subItemsProperty?.type === 'relation' && subItemsProperty?.relation) {
+        const subItems = subItemsProperty?.relation;
+        
+        // Each related page is a sub-item of current page
+        for (const subItem of subItems) {
+          if (subItem.id) {
+            relationships.push({
+              parentId: page.id,
+              childId: subItem.id
+            });
           }
         }
       }
     }
   }
   
+  console.log(`🔍 Found ${relationships.length} parent-child relationships from Sub-items field`);
   return relationships;
 }
 
@@ -397,7 +397,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const sourceDatabaseId = process.env.SOURCE_DATABASE_ID!;
     const parentPageId = process.env.PARENT_PAGE_ID!;
-    const newName = process.env.NEW_DATABASE_NAME || "Cloned Database";
+    const baseName = process.env.NEW_DATABASE_NAME || "Cloned Database";
+    
+    // Add current date to database name in human-readable format
+    const currentDate = new Date();
+    const humanDate = currentDate.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const newName = `${baseName} (${humanDate})`;
 
     // Validate ID formats
     validateNotionId(sourceDatabaseId, "SOURCE_DATABASE_ID");
@@ -417,6 +428,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
+    
+    // Configure Action field as wrap if it exists
+    if (filteredDatabaseProperties.Action && filteredDatabaseProperties.Action.type === 'rich_text') {
+      filteredDatabaseProperties.Action.rich_text = {
+        wrap: true
+      };
+      console.log("🔧 Configured Action field with wrap: true");
+    }
 
     // Create new database with flat structure (STEP 1: copy all data as flat list)
     const newDatabase = await notion.databases.create({
