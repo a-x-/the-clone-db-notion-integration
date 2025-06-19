@@ -42,6 +42,51 @@ function validateNotionId(id: string, idType: string): void {
   }
 }
 
+// Filter properties to exclude problematic ones for page creation
+function filterPropertiesForCreation(properties: any): any {
+  const filteredProperties: any = {};
+  
+  for (const [key, value] of Object.entries(properties)) {
+    const prop = value as any;
+    
+    // Skip relation properties as they can cause validation errors
+    // when relations reference pages that don't exist in the target database
+    if (prop.type === 'relation') {
+      console.log(`Skipping relation property: ${key}`);
+      continue;
+    }
+    
+    // Skip rollup properties as they depend on relations
+    if (prop.type === 'rollup') {
+      console.log(`Skipping rollup property: ${key}`);
+      continue;
+    }
+    
+    // Skip formula properties as they are calculated automatically
+    if (prop.type === 'formula') {
+      console.log(`Skipping formula property: ${key}`);
+      continue;
+    }
+    
+    // Skip created_by and last_edited_by as they are system properties
+    if (prop.type === 'created_by' || prop.type === 'last_edited_by') {
+      console.log(`Skipping system property: ${key}`);
+      continue;
+    }
+    
+    // Skip created_time and last_edited_time as they are system properties
+    if (prop.type === 'created_time' || prop.type === 'last_edited_time') {
+      console.log(`Skipping system property: ${key}`);
+      continue;
+    }
+    
+    // Include all other property types
+    filteredProperties[key] = value;
+  }
+  
+  return filteredProperties;
+}
+
 // Copy database pages content
 async function copyDatabaseContent(
   sourceDatabaseId: string,
@@ -70,8 +115,9 @@ async function copyDatabaseContent(
   let copiedCount = 0;
   for (const page of allPages) {
     try {
-      // Extract properties from the source page
+      // Extract and filter properties from the source page
       const pageProperties = page.properties;
+      const filteredProperties = filterPropertiesForCreation(pageProperties);
 
       // Create new page in target database
       await notion.pages.create({
@@ -79,7 +125,7 @@ async function copyDatabaseContent(
           type: "database_id",
           database_id: targetDatabaseId,
         },
-        properties: pageProperties,
+        properties: filteredProperties,
       });
 
       copiedCount++;
@@ -168,7 +214,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages!`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages! Note: Relation, rollup, and formula properties were skipped during copy.`,
       copiedPagesCount,
     };
 
