@@ -113,7 +113,7 @@ function filterPropertiesForCreation(properties: any): any {
   return filteredProperties;
 }
 
-// Copy database pages content - simple and fast approach
+// STEP 1: Copy database pages content as flat list - simple and fast approach
 async function copyDatabaseContent(
   sourceDatabaseId: string,
   targetDatabaseId: string,
@@ -235,20 +235,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
 
-    // Add sub-items support by creating a self-relation property
-    // According to Notion API docs, dual_property should be an empty object
-    const propertiesWithSubItems: any = {
-      ...filteredDatabaseProperties,
-      "Sub-items": {
-        type: "relation",
-        relation: {
-          database_id: "", // Will be set after database creation
-          dual_property: {} // Empty object as per API docs
-        }
-      }
-    };
-
-    // Create new database
+    // Create new database with flat structure (STEP 1: copy all data as flat list)
     const newDatabase = await notion.databases.create({
       parent: {
         type: "page_id",
@@ -262,28 +249,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
       ],
-      properties: propertiesWithSubItems as any,
+      properties: filteredDatabaseProperties,
     });
 
-    console.log("✅ Successfully created new database with sub-items support");
-
-    // Update the Sub-items relation to point to the newly created database
-    await notion.databases.update({
-      database_id: newDatabase.id,
-      properties: {
-        "Sub-items": {
-          type: "relation",
-          relation: {
-            database_id: newDatabase.id,
-            dual_property: {} // Empty object as per API docs
-          }
-        }
-      } as any
-    });
+    console.log("✅ Successfully created new database");
 
     console.log(`✅ Successfully created new database: ${newDatabase.id}`);
 
-    // Copy all pages from source to target database (now with 5-minute timeout)
+    // Copy all pages from source to target database as flat list (STEP 1)
+    // TODO: STEP 2 will restore hierarchical structure using relation properties
     const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
 
     console.log(`🎉 Successfully copied ${copiedPagesCount} pages`);
@@ -295,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages! Note: Relation, rollup, and formula properties were filtered out during copy.`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages as flat list! Note: Relation, rollup, and formula properties were filtered out during copy.`,
       copiedPagesCount,
     };
 

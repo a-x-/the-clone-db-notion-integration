@@ -27,7 +27,7 @@
 - ✅ Proper ES modules structure
 - ✅ CORS headers properly implemented
 - ✅ **Fixed relation properties handling** - filters out problematic relation/rollup/formula properties
-- ✅ **Fixed sub-items self-relation creation** - properly handles dual_property configuration
+- ✅ **Fixed sub-items self-relation creation** - properly handles dual_property configuration with empty object {}
 
 ### 📁 Project Structure
 
