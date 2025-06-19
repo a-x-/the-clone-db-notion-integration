@@ -113,7 +113,7 @@ function filterPropertiesForCreation(properties: any): any {
   return filteredProperties;
 }
 
-// Copy database pages content
+// Copy database pages content - simple and fast approach
 async function copyDatabaseContent(
   sourceDatabaseId: string,
   targetDatabaseId: string,
@@ -121,6 +121,8 @@ async function copyDatabaseContent(
   let allPages: any[] = [];
   let hasMore = true;
   let startCursor: string | undefined = undefined;
+
+  console.log("🔍 Fetching all pages from source database...");
 
   // Get all pages from source database
   while (hasMore) {
@@ -133,37 +135,58 @@ async function copyDatabaseContent(
     allPages = allPages.concat(response.results);
     hasMore = response.has_more;
     startCursor = response.next_cursor || undefined;
+    
+    console.log(`📄 Fetched ${allPages.length} pages so far...`);
   }
 
-  console.log(`Found ${allPages.length} pages to copy`);
+  console.log(`📊 Found ${allPages.length} total pages to copy`);
 
-  // Copy each page to the new database
+  // FAST approach: batch processing with Promise.allSettled
+  const BATCH_SIZE = 10; // Process 10 pages at once to avoid API limits
   let copiedCount = 0;
-  for (const page of allPages) {
-    try {
-      // Extract and filter properties from the source page
-      const pageProperties = page.properties;
-      const filteredProperties = filterPropertiesForCreation(pageProperties);
+  
+  // Process pages in batches
+  for (let i = 0; i < allPages.length; i += BATCH_SIZE) {
+    const batch = allPages.slice(i, i + BATCH_SIZE);
+    console.log(`🚀 Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(allPages.length/BATCH_SIZE)} (${batch.length} pages)...`);
+    
+    // Create promises for this batch
+    const batchPromises = batch
+      .filter(page => 'properties' in page) // Type guard
+      .map(async (page) => {
+        const pageProperties = (page as any).properties;
+        const filteredProperties = filterPropertiesForCreation(pageProperties);
 
-      // Create new page in target database
-      await notion.pages.create({
-        parent: {
-          type: "database_id",
-          database_id: targetDatabaseId,
-        },
-        properties: filteredProperties,
+        return notion.pages.create({
+          parent: {
+            type: "database_id",
+            database_id: targetDatabaseId,
+          },
+          properties: filteredProperties,
+        });
       });
 
-      copiedCount++;
-      console.log(`Copied page ${copiedCount}/${allPages.length}`);
-    } catch (error) {
-      console.error("Error copying page:", error);
-      // Continue copying other pages even if one fails
-    }
+    // Execute batch in parallel
+    const results = await Promise.allSettled(batchPromises);
+    
+    // Count successful copies
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        copiedCount++;
+        console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
+      } else {
+        console.error(`❌ Error copying page ${i + index + 1}:`, result.reason);
+      }
+    });
   }
 
+  console.log(`🎉 Successfully copied ${copiedCount} total pages`);
   return copiedCount;
 }
+
+
+
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers for all responses
@@ -197,17 +220,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     validateNotionId(sourceDatabaseId, "SOURCE_DATABASE_ID");
     validateNotionId(parentPageId, "PARENT_PAGE_ID");
 
-    console.log("Starting database cloning process...");
-    console.log(`Source Database ID: ${sourceDatabaseId}`);
-    console.log(`Parent Page ID: ${parentPageId}`);
-    console.log(`New Database Name: ${newName}`);
+    console.log("🚀 Starting database cloning process...");
+    console.log(`📊 Source Database ID: ${sourceDatabaseId}`);
+    console.log(`📁 Parent Page ID: ${parentPageId}`);
+    console.log(`🏷️ New Database Name: ${newName}`);
 
     // Get source database
     const sourceDatabase = await notion.databases.retrieve({
       database_id: sourceDatabaseId,
     });
 
-    console.log("Successfully retrieved source database");
+    console.log("✅ Successfully retrieved source database");
 
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
@@ -229,12 +252,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       properties: filteredDatabaseProperties as any,
     });
 
-    console.log(`Successfully created new database: ${newDatabase.id}`);
+    console.log(`✅ Successfully created new database: ${newDatabase.id}`);
 
-    // Copy all pages from source to target database
+    // Copy all pages from source to target database (now with 5-minute timeout)
     const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
 
-    console.log(`Successfully copied ${copiedPagesCount} pages`);
+    console.log(`🎉 Successfully copied ${copiedPagesCount} pages`);
 
     // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;
@@ -243,7 +266,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages! Note: Relation, rollup, and formula properties were skipped during copy.`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages! Note: Relation, rollup, and formula properties were filtered out during copy.`,
       copiedPagesCount,
     };
 

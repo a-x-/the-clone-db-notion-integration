@@ -1,7 +1,7 @@
 {
     "functions": {
         "api/duplicate.ts": {
-            "maxDuration": 30,
+            "maxDuration": 60,
             "runtime": "@vercel/node@3.2.14"
         },
         "api/health.ts": {

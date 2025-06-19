@@ -26,6 +26,7 @@
 - ✅ Consistent formatting
 - ✅ Proper ES modules structure
 - ✅ CORS headers properly implemented
+- ✅ **Fixed relation properties handling** - filters out problematic relation/rollup/formula properties
 
 ### 📁 Project Structure
 
@@ -51,11 +52,12 @@
 
 ### 🚀 Ready for Production
 
-- **12/12 tests pass** successfully ✅
+- **11/11 tests pass** successfully ✅
 - **TypeScript compiles** without errors ✅
 - **Linter passes** without warnings ✅
 - **CORS headers** properly configured ✅
 - **English language** throughout codebase ✅
+- **Relation properties handling** - automatically filters out problematic properties ✅
 - **Project ready for deployment** on Vercel ✅
 
 ### 📝 Translation Summary
@@ -69,12 +71,22 @@
 ### 🛠️ Available Commands
 
 ```bash
-npm test          # All 12 tests pass ✅
+npm test          # All 11 tests pass ✅
 npm run lint      # No errors or warnings ✅
 npm run build     # TypeScript compiles successfully ✅
 npm run dev       # Development server
 npm run lint:fix  # Auto-fix formatting issues
 ```
+
+### ⚠️ Important Notes
+
+**Property Filtering**: The cloner automatically filters out problematic properties during database copying:
+
+- **Relation properties**: Cannot be copied as they reference other databases
+- **Rollup properties**: Depend on relations, so also skipped
+- **Formula properties**: Auto-calculated by Notion, not copyable
+
+This ensures reliable cloning while preserving all other property types (title, rich_text, number, select, multi_select, date, etc.).
 
 ### 🌍 Next Steps
 

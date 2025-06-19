@@ -223,6 +223,10 @@ This project is open source and available under the [MIT License](LICENSE).
 - Ensure IDs are 32 characters long
 - Remove any dashes from the ID
 
+**"Cannot create relation" Error**
+
+- This is automatically handled - relation properties are filtered out during copying
+
 ### Support
 
 If you encounter issues:
