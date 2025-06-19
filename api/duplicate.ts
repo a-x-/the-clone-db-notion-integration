@@ -236,15 +236,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
 
     // Add sub-items support by creating a self-relation property
-    // Note: Cannot specify dual_property.name during initial creation
+    // According to Notion API docs, dual_property should be an empty object
     const propertiesWithSubItems: any = {
       ...filteredDatabaseProperties,
       "Sub-items": {
         type: "relation",
         relation: {
           database_id: "", // Will be set after database creation
-          type: "dual_property"
-          // dual_property will be auto-created by Notion
+          dual_property: {} // Empty object as per API docs
         }
       }
     };
@@ -276,8 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           type: "relation",
           relation: {
             database_id: newDatabase.id,
-            type: "dual_property"
-            // Notion will automatically handle the dual property
+            dual_property: {} // Empty object as per API docs
           }
         }
       } as any

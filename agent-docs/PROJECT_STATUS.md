@@ -12,7 +12,7 @@
 
 ### 🧪 Testing
 
-- ✅ All 12 tests pass successfully
+- ✅ All 15 tests pass successfully
 - ✅ Coverage of all critical functions
 - ✅ Unit tests for serverless functions
 - ✅ Input data validation
@@ -27,6 +27,7 @@
 - ✅ Proper ES modules structure
 - ✅ CORS headers properly implemented
 - ✅ **Fixed relation properties handling** - filters out problematic relation/rollup/formula properties
+- ✅ **Fixed sub-items self-relation creation** - properly handles dual_property configuration
 
 ### 📁 Project Structure
 
@@ -52,7 +53,7 @@
 
 ### 🚀 Ready for Production
 
-- **11/11 tests pass** successfully ✅
+- **15/15 tests pass** successfully ✅
 - **TypeScript compiles** without errors ✅
 - **Linter passes** without warnings ✅
 - **CORS headers** properly configured ✅
@@ -71,7 +72,7 @@
 ### 🛠️ Available Commands
 
 ```bash
-npm test          # All 11 tests pass ✅
+npm test          # All 15 tests pass ✅
 npm run lint      # No errors or warnings ✅
 npm run build     # TypeScript compiles successfully ✅
 npm run dev       # Development server
