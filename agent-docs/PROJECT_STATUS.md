@@ -27,7 +27,7 @@
 - ✅ Proper ES modules structure
 - ✅ CORS headers properly implemented
 - ✅ **Fixed relation properties handling** - filters out problematic relation/rollup/formula properties
-- ✅ **Fixed sub-items self-relation creation** - properly handles dual_property configuration with empty object {}
+- ✅ **Simplified to flat list approach** - STEP 1: copies all data as flat list, STEP 2 will restore hierarchy
 
 ### 📁 Project Structure
 
@@ -81,9 +81,14 @@ npm run lint:fix  # Auto-fix formatting issues
 
 ### ⚠️ Important Notes
 
+**Two-Stage Cloning Approach**:
+
+- **STEP 1**: Copy all database structure and content as flat list (currently implemented)
+- **STEP 2**: Restore hierarchical relationships using relation properties (planned)
+
 **Property Filtering**: The cloner automatically filters out problematic properties during database copying:
 
-- **Relation properties**: Cannot be copied as they reference other databases
+- **Relation properties**: Cannot be copied as they reference other databases  
 - **Rollup properties**: Depend on relations, so also skipped
 - **Formula properties**: Auto-calculated by Notion, not copyable
 

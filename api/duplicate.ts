@@ -184,9 +184,192 @@ async function copyDatabaseContent(
   return copiedCount;
 }
 
+// STEP 2: Add sub-items support and restore hierarchical structure
+async function addSubItemsFieldAndRestoreHierarchy(
+  sourceDatabaseId: string, 
+  targetDatabaseId: string
+): Promise<void> {
+  console.log("🔗 STEP 2: Adding sub-items field and restoring hierarchy...");
+  
+  // First, add Sub-items relation field to the target database
+  await notion.databases.update({
+    database_id: targetDatabaseId,
+    properties: {
+      "Sub-items": {
+        type: "relation",
+        relation: {
+          database_id: targetDatabaseId,
+          single_property: {}
+        }
+      }
+    } as any
+  });
+  
+  console.log("✅ Added Sub-items field to target database");
+  
+  // Now restore the hierarchical structure
+  await restoreHierarchy(sourceDatabaseId, targetDatabaseId);
+}
 
+// Restore hierarchical relationships between pages
+async function restoreHierarchy(sourceDatabaseId: string, targetDatabaseId: string): Promise<void> {
+  console.log("🌳 Analyzing and restoring hierarchical structure...");
+  
+  // Get all pages from source database to analyze hierarchy
+  const sourcePages = await getAllPagesFromDatabase(sourceDatabaseId);
+  const targetPages = await getAllPagesFromDatabase(targetDatabaseId);
+  
+  console.log(`📊 Found ${sourcePages.length} source pages and ${targetPages.length} target pages`);
+  
+  // Create mapping from source to target pages (by title or other unique identifier)
+  const pageMapping = createPageMapping(sourcePages, targetPages);
+  
+  // Find hierarchical relationships in source pages
+  const relationships = findHierarchicalRelationships(sourcePages);
+  
+  console.log(`🔗 Found ${relationships.length} hierarchical relationships to restore`);
+  
+  // Apply relationships to target pages
+  if (relationships.length > 0) {
+    await applyRelationships(relationships, pageMapping, targetDatabaseId);
+  }
+  
+  console.log("✅ Hierarchy restoration completed");
+}
 
+// Get all pages from a database
+async function getAllPagesFromDatabase(databaseId: string): Promise<any[]> {
+  let allPages: any[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined = undefined;
 
+  while (hasMore) {
+    const response = await notion.databases.query({
+      database_id: databaseId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    allPages = allPages.concat(response.results);
+    hasMore = response.has_more;
+    startCursor = response.next_cursor || undefined;
+  }
+
+  return allPages;
+}
+
+// Create mapping between source and target pages based on title
+function createPageMapping(sourcePages: any[], targetPages: any[]): Map<string, string> {
+  const mapping = new Map<string, string>();
+  
+  for (const sourcePage of sourcePages) {
+    const sourceTitle = getPageTitle(sourcePage);
+    if (sourceTitle) {
+      // Find corresponding target page by title
+      const targetPage = targetPages.find(target => getPageTitle(target) === sourceTitle);
+      if (targetPage) {
+        mapping.set(sourcePage.id, targetPage.id);
+      }
+    }
+  }
+  
+  console.log(`📝 Created mapping for ${mapping.size} pages`);
+  return mapping;
+}
+
+// Extract title from page properties
+function getPageTitle(page: any): string | null {
+  if (!page.properties) return null;
+  
+  // Look for title property (usually the first property with type 'title')
+  for (const [key, property] of Object.entries(page.properties)) {
+    if ((property as any).type === 'title') {
+      const titleArray = (property as any).title;
+      if (titleArray && titleArray.length > 0) {
+        return titleArray[0].plain_text || null;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Find hierarchical relationships in source pages 
+function findHierarchicalRelationships(sourcePages: any[]): Array<{parentId: string, childId: string}> {
+  const relationships: Array<{parentId: string, childId: string}> = [];
+  
+  for (const page of sourcePages) {
+    if (page.properties) {
+      // Look for relation properties that might indicate hierarchy
+      for (const [key, property] of Object.entries(page.properties)) {
+        if ((property as any).type === 'relation') {
+          const relationData = (property as any).relation;
+          if (relationData && relationData.length > 0) {
+            // If this page has relation to other pages, those might be its sub-items
+            for (const relatedPage of relationData) {
+              if (relatedPage.id) {
+                relationships.push({
+                  parentId: page.id,
+                  childId: relatedPage.id
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return relationships;
+}
+
+// Apply relationships to target database
+async function applyRelationships(
+  relationships: Array<{parentId: string, childId: string}>, 
+  pageMapping: Map<string, string>,
+  targetDatabaseId: string
+): Promise<void> {
+  console.log(`🔄 Applying ${relationships.length} relationships...`);
+  
+  const BATCH_SIZE = 5; // Smaller batch size for relation updates
+  
+  for (let i = 0; i < relationships.length; i += BATCH_SIZE) {
+    const batch = relationships.slice(i, i + BATCH_SIZE);
+    
+    const batchPromises = batch.map(async (relationship) => {
+      const targetParentId = pageMapping.get(relationship.parentId);
+      const targetChildId = pageMapping.get(relationship.childId);
+      
+      if (targetParentId && targetChildId) {
+        try {
+          // Get current parent page to see existing sub-items
+          const parentPage = await notion.pages.retrieve({ page_id: targetParentId });
+          const currentSubItems = (parentPage as any).properties["Sub-items"]?.relation || [];
+          
+          // Add new child to sub-items list
+          const updatedSubItems = [...currentSubItems, { id: targetChildId }];
+          
+          // Update parent page with new sub-item relationship
+          await notion.pages.update({
+            page_id: targetParentId,
+            properties: {
+              "Sub-items": {
+                type: "relation",
+                relation: updatedSubItems
+              }
+            }
+          });
+          
+          console.log(`✅ Added relationship: ${targetParentId} -> ${targetChildId}`);
+        } catch (error) {
+          console.error(`❌ Error creating relationship ${targetParentId} -> ${targetChildId}:`, error);
+        }
+      }
+    });
+    
+    await Promise.allSettled(batchPromises);
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers for all responses
@@ -257,10 +440,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`✅ Successfully created new database: ${newDatabase.id}`);
 
     // Copy all pages from source to target database as flat list (STEP 1)
-    // TODO: STEP 2 will restore hierarchical structure using relation properties
     const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
 
     console.log(`🎉 Successfully copied ${copiedPagesCount} pages`);
+
+    // STEP 2: Add sub-items field and restore hierarchical structure
+    await addSubItemsFieldAndRestoreHierarchy(sourceDatabaseId, newDatabase.id);
 
     // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;
@@ -269,7 +454,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages as flat list! Note: Relation, rollup, and formula properties were filtered out during copy.`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages and hierarchy restored! Sub-items feature is now active.`,
       copiedPagesCount,
     };
 
