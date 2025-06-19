@@ -42,6 +42,32 @@ function validateNotionId(id: string, idType: string): void {
   }
 }
 
+// Filter database schema properties to exclude problematic ones
+function filterDatabaseSchemaProperties(properties: any): any {
+  const filteredProperties: any = {};
+  
+  for (const [key, value] of Object.entries(properties)) {
+    const prop = value as any;
+    
+    // Skip relation properties as they reference other databases and can cause validation errors
+    if (prop.type === 'relation') {
+      console.log(`Skipping relation property in schema: ${key}`);
+      continue;
+    }
+    
+    // Skip rollup properties as they depend on relations
+    if (prop.type === 'rollup') {
+      console.log(`Skipping rollup property in schema: ${key}`);
+      continue;
+    }
+    
+    // Include all other property types (title, rich_text, number, select, etc.)
+    filteredProperties[key] = value;
+  }
+  
+  return filteredProperties;
+}
+
 // Filter properties to exclude problematic ones for page creation
 function filterPropertiesForCreation(properties: any): any {
   const filteredProperties: any = {};
@@ -183,6 +209,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log("Successfully retrieved source database");
 
+    // Filter database properties to exclude problematic ones (relation, rollup)
+    const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
+
     // Create new database
     const newDatabase = await notion.databases.create({
       parent: {
@@ -197,7 +226,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
       ],
-      properties: sourceDatabase.properties as any,
+      properties: filteredDatabaseProperties as any,
     });
 
     console.log(`Successfully created new database: ${newDatabase.id}`);
