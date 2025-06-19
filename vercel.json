@@ -1,14 +1,11 @@
 {
-    "version": 2,
-    "builds": [
-        {
-            "src": "api/*.ts",
-            "use": "@vercel/node"
-        }
-    ],
     "functions": {
         "api/duplicate.ts": {
-            "maxDuration": 30
+            "maxDuration": 30,
+            "runtime": "@vercel/node@3.2.14"
+        },
+        "api/health.ts": {
+            "runtime": "@vercel/node@3.2.14"
         }
     },
     "headers": [
@@ -28,6 +25,15 @@
                     "value": "Content-Type, Authorization"
                 }
             ]
+        }
+    ],
+    "regions": [
+        "fra1"
+    ],
+    "rewrites": [
+        {
+            "source": "/",
+            "destination": "/api/health"
         }
     ]
 }

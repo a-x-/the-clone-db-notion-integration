@@ -1,13 +1,6 @@
 import { Client } from "@notionhq/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-interface RequestBody {
-  sourceDatabaseId: string;
-  parentPageId: string;
-  includeContent?: boolean;
-  newName?: string;
-}
-
 interface ErrorResponse {
   error: string;
   message?: string;
@@ -25,68 +18,67 @@ const notion = new Client({
   auth: process.env.NOTION_TOKEN,
 });
 
-// Валидация входных данных
-function validateInput(body: unknown): RequestBody {
-  if (!body || typeof body !== "object") {
-    throw new Error("Request body is required and must be an object");
+// Security validation for environment variables
+function validateEnvironment(): void {
+  if (!process.env.NOTION_TOKEN) {
+    throw new Error("NOTION_TOKEN environment variable is required");
   }
-
-  const { sourceDatabaseId, parentPageId, includeContent, newName } = body as Record<
-    string,
-    unknown
-  >;
-
-  if (!sourceDatabaseId || typeof sourceDatabaseId !== "string") {
-    throw new Error("sourceDatabaseId is required and must be a string");
+  
+  if (!process.env.SOURCE_DATABASE_ID) {
+    throw new Error("SOURCE_DATABASE_ID environment variable is required");
   }
-
-  if (!parentPageId || typeof parentPageId !== "string") {
-    throw new Error("parentPageId is required and must be a string");
+  
+  if (!process.env.PARENT_PAGE_ID) {
+    throw new Error("PARENT_PAGE_ID environment variable is required");
   }
-
-  // Проверяем формат ID (32 символа без дефисов или с дефисами)
-  const idPattern =
-    /^[a-f0-9]{32}$|^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-
-  if (!idPattern.test(sourceDatabaseId.replace(/-/g, ""))) {
-    throw new Error("sourceDatabaseId must be a valid Notion database ID");
-  }
-
-  if (!idPattern.test(parentPageId.replace(/-/g, ""))) {
-    throw new Error("parentPageId must be a valid Notion page ID");
-  }
-
-  return {
-    sourceDatabaseId,
-    parentPageId,
-    includeContent: typeof includeContent === "boolean" ? includeContent : false,
-    newName: typeof newName === "string" ? newName : undefined,
-  };
 }
 
-// Основная функция дублирования базы данных
-async function duplicateDatabase(data: RequestBody): Promise<SuccessResponse> {
-  const { sourceDatabaseId, parentPageId, newName } = data;
+// Validate ID format (32 characters, alphanumeric + hyphens)
+function validateNotionId(id: string, idType: string): void {
+  const cleanId = id.replace(/-/g, "");
+  if (cleanId.length !== 32 || !/^[a-f0-9]+$/i.test(cleanId)) {
+    throw new Error(`Invalid ${idType} format. Must be 32 characters.`);
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Set CORS headers for all responses
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  // Handle OPTIONS request (CORS preflight)
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    const errorResponse: ErrorResponse = {
+      error: "Method not allowed",
+      message: "Only POST requests are allowed for this endpoint",
+    };
+    return res.status(405).json(errorResponse);
+  }
 
   try {
-    // 1. Получаем информацию об исходной базе данных
-    const sourceDb = await notion.databases.retrieve({
+    // Validate environment variables
+    validateEnvironment();
+
+    const sourceDatabaseId = process.env.SOURCE_DATABASE_ID!;
+    const parentPageId = process.env.PARENT_PAGE_ID!;
+    const newName = process.env.NEW_DATABASE_NAME || "Cloned Database";
+
+    // Validate ID formats
+    validateNotionId(sourceDatabaseId, "SOURCE_DATABASE_ID");
+    validateNotionId(parentPageId, "PARENT_PAGE_ID");
+
+    // Get source database
+    const sourceDatabase = await notion.databases.retrieve({
       database_id: sourceDatabaseId,
     });
 
-    if (!("properties" in sourceDb)) {
-      throw new Error("Failed to retrieve database properties");
-    }
-
-    // 2. Создаём название для новой базы данных
-    let dbTitle = "Database (Copy)";
-    if (newName) {
-      dbTitle = newName;
-    } else if ("title" in sourceDb && Array.isArray(sourceDb.title) && sourceDb.title[0]) {
-      dbTitle = `${sourceDb.title[0].plain_text || "Database"} (Copy)`;
-    }
-
-    // 3. Создаём новую базу данных с теми же свойствами
+    // Create new database
     const newDatabase = await notion.databases.create({
       parent: {
         type: "page_id",
@@ -96,89 +88,51 @@ async function duplicateDatabase(data: RequestBody): Promise<SuccessResponse> {
         {
           type: "text",
           text: {
-            content: dbTitle,
+            content: newName,
           },
         },
       ],
-      // Notion API типы properties очень сложные, используем any для совместимости
-      properties: sourceDb.properties as any,
+      properties: sourceDatabase.properties as any,
     });
 
-    // 4. Формируем URL новой базы данных
+    // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;
 
-    return {
+    const successResponse: SuccessResponse = {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${dbTitle}" successfully duplicated!`,
+      message: `Database "${newName}" successfully cloned!`,
     };
+
+    return res.status(200).json(successResponse);
   } catch (error) {
-    console.error("Error duplicating database:", error);
+    console.error("Error cloning database:", error);
+
+    let errorMessage = "Failed to clone database";
+    let statusCode = 500;
 
     if (error instanceof Error) {
-      if (error.message.includes("unauthorized")) {
-        throw new Error("Unauthorized: Check your NOTION_TOKEN and database permissions");
+      if (error.message.includes("environment variable")) {
+        errorMessage = "Server configuration error";
+        statusCode = 500;
+      } else if (error.message.includes("Invalid") && error.message.includes("format")) {
+        errorMessage = "Invalid database or page ID format in configuration";
+        statusCode = 500;
+      } else if (error.message.includes("Could not find")) {
+        errorMessage = "Database or page not found. Check permissions and IDs in configuration.";
+        statusCode = 404;
+      } else if (error.message.includes("Unauthorized")) {
+        errorMessage = "Unauthorized. Check Notion token and permissions.";
+        statusCode = 401;
       }
-      if (error.message.includes("not_found")) {
-        throw new Error("Database or parent page not found. Check your IDs and permissions");
-      }
-      throw new Error(`Notion API error: ${error.message}`);
     }
 
-    throw new Error("Unknown error occurred while duplicating database");
-  }
-}
+    const errorResponse: ErrorResponse = {
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error instanceof Error ? error.message : String(error) : undefined,
+    };
 
-// CORS headers
-function setCorsHeaders(res: VercelResponse): void {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
-
-// Главный обработчик
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-): Promise<VercelResponse> {
-  setCorsHeaders(res);
-
-  // Обрабатываем preflight OPTIONS запрос
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  // Принимаем только POST запросы
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method not allowed",
-      message: "This endpoint only accepts POST requests",
-    } satisfies ErrorResponse);
-  }
-
-  // Проверяем наличие токена
-  if (!process.env.NOTION_TOKEN) {
-    return res.status(500).json({
-      error: "Server configuration error",
-      details: "NOTION_TOKEN environment variable is not set",
-    } satisfies ErrorResponse);
-  }
-
-  try {
-    // Валидируем входные данные
-    const validatedData = validateInput(req.body);
-
-    // Выполняем дублирование
-    const result = await duplicateDatabase(validatedData);
-
-    return res.status(200).json(result satisfies SuccessResponse);
-  } catch (error) {
-    console.error("Handler error:", error);
-
-    return res.status(400).json({
-      error: "Bad request",
-      details: error instanceof Error ? error.message : "Unknown error",
-    } satisfies ErrorResponse);
+    return res.status(statusCode).json(errorResponse);
   }
 }
