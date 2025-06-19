@@ -113,7 +113,27 @@ function filterPropertiesForCreation(properties: any): any {
   return filteredProperties;
 }
 
-// STEP 1: Copy database pages content as flat list - simple and fast approach
+// Helper function to get page title from properties
+function getPageTitle(page: any): string {
+  const properties = page.properties;
+  
+  // Look for title property (usually "Name" but can vary)
+  for (const [, prop] of Object.entries(properties)) {
+    if ((prop as any).type === 'title' && (prop as any).title && (prop as any).title.length > 0) {
+      return (prop as any).title[0].plain_text || 'Untitled';
+    }
+  }
+  
+  return 'Untitled';
+}
+
+// Helper function to find parent page title by ID
+function findParentTitle(pages: any[], parentId: string): string {
+  const parentPage = pages.find(page => page.id === parentId);
+  return parentPage ? getPageTitle(parentPage) : 'Unknown Parent';
+}
+
+// STEP 1: Copy database pages content with Test Suite field populated
 async function copyDatabaseContent(
   sourceDatabaseId: string,
   targetDatabaseId: string,
@@ -141,6 +161,30 @@ async function copyDatabaseContent(
 
   console.log(`📊 Found ${allPages.length} total pages to copy`);
 
+  // Analyze hierarchy - find which pages are sub-items of others
+  console.log("🔍 Analyzing hierarchy to populate Test Suite field...");
+  const hierarchyMap = new Map<string, string>(); // childId -> parentTitle
+  
+  for (const page of allPages) {
+    if (page?.properties?.["Sub-items"]) {
+      const subItemsProperty = page.properties["Sub-items"];
+      
+      if (subItemsProperty?.type === 'relation' && subItemsProperty?.relation) {
+        const subItems = subItemsProperty.relation;
+        const parentTitle = getPageTitle(page);
+        
+        // For each sub-item, record this page as its parent
+        for (const subItem of subItems) {
+          if (subItem.id) {
+            hierarchyMap.set(subItem.id, parentTitle);
+          }
+        }
+      }
+    }
+  }
+  
+  console.log(`📊 Found ${hierarchyMap.size} pages with parent relationships`);
+
   // FAST approach: batch processing with Promise.allSettled
   const BATCH_SIZE = 10; // Process 10 pages at once to avoid API limits
   let copiedCount = 0;
@@ -156,6 +200,28 @@ async function copyDatabaseContent(
       .map(async (page) => {
         const pageProperties = (page as any).properties;
         const filteredProperties = filterPropertiesForCreation(pageProperties);
+
+        // Add Test Suite field with parent name if this page has a parent
+        const parentTitle = hierarchyMap.get(page.id);
+        if (parentTitle) {
+          filteredProperties["Test Suite"] = {
+            type: "rich_text",
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content: parentTitle
+                }
+              }
+            ]
+          };
+        } else {
+          // Empty Test Suite field for pages without parents
+          filteredProperties["Test Suite"] = {
+            type: "rich_text",
+            rich_text: []
+          };
+        }
 
         return notion.pages.create({
           parent: {
@@ -173,7 +239,12 @@ async function copyDatabaseContent(
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         copiedCount++;
-        console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
+        const parentTitle = hierarchyMap.get(batch[index].id);
+        if (parentTitle) {
+          console.log(`✅ Copied page ${copiedCount}/${allPages.length} (Test Suite: ${parentTitle})`);
+        } else {
+          console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
+        }
       } else {
         console.error(`❌ Error copying page ${i + index + 1}:`, result.reason);
       }
@@ -243,6 +314,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
+    
+    // Add Test Suite field for parent item names
+    filteredDatabaseProperties["Test Suite"] = {
+      type: "rich_text",
+      rich_text: {}
+    };
+    console.log("🔧 Added Test Suite field for parent item names");
     
     // Note: Notion API doesn't support wrap configuration for rich_text fields
     // Wrap behavior is controlled by the Notion UI, not the API
