@@ -370,6 +370,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     console.log("🔧 Added Test Suite field for parent item names");
     
+    // Add Last Edited By field
+    filteredDatabaseProperties["Last Edited By"] = {
+      type: "last_edited_by",
+      last_edited_by: {}
+    };
+    console.log("🔧 Added Last Edited By field");
+    
     // Note: Notion API doesn't support wrap configuration for rich_text fields
     // Wrap behavior is controlled by the Notion UI, not the API
     if (filteredDatabaseProperties.Action && filteredDatabaseProperties.Action.type === 'rich_text') {
