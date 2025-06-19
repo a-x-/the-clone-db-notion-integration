@@ -429,12 +429,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
     
-    // Configure Action field as wrap if it exists
+    // Note: Notion API doesn't support wrap configuration for rich_text fields
+    // Wrap behavior is controlled by the Notion UI, not the API
     if (filteredDatabaseProperties.Action && filteredDatabaseProperties.Action.type === 'rich_text') {
-      filteredDatabaseProperties.Action.rich_text = {
-        wrap: true
-      };
-      console.log("🔧 Configured Action field with wrap: true");
+      console.log("🔧 Action field detected (wrap will be configured in Notion UI)");
     }
 
     // Create new database with flat structure (STEP 1: copy all data as flat list)
