@@ -169,7 +169,6 @@ async function copyDatabaseContent(
   
   for (const page of allPages) {
     const pageTitle = getPageTitle(page);
-    console.log(`🔍 Analyzing page: "${pageTitle}" (ID: ${page.id})`);
     
     // Check all possible hierarchy field names
     const hierarchyFields = ['Sub-items', 'Sub-item', 'Parent item', 'Related to Checklist (Sub-item)', 'Related to Checklist (Parent item)'];
@@ -177,11 +176,9 @@ async function copyDatabaseContent(
     for (const fieldName of hierarchyFields) {
       if (page?.properties?.[fieldName]) {
         const hierarchyProperty = page.properties[fieldName];
-        console.log(`   Found ${fieldName} property:`, JSON.stringify(hierarchyProperty, null, 2));
         
-        if (hierarchyProperty?.type === 'relation' && hierarchyProperty?.relation) {
+        if (hierarchyProperty?.type === 'relation' && hierarchyProperty?.relation && hierarchyProperty.relation.length > 0) {
           const relations = hierarchyProperty.relation;
-          console.log(`   ${fieldName} has ${relations.length} relations`);
           
           // For Sub-items or Sub-item fields - this page is parent of the related items
           if (fieldName.includes('Sub-item') || fieldName === 'Sub-items') {
@@ -191,7 +188,6 @@ async function copyDatabaseContent(
                 if (childPage) {
                   const childTitle = getPageTitle(childPage);
                   hierarchyMap.set(childTitle, pageTitle);
-                  console.log(`   📝 Mapping child "${childTitle}" -> parent "${pageTitle}"`);
                 }
               }
             }
@@ -205,7 +201,6 @@ async function copyDatabaseContent(
                 if (parentPage) {
                   const parentTitle = getPageTitle(parentPage);
                   hierarchyMap.set(pageTitle, parentTitle);
-                  console.log(`   📝 Mapping child "${pageTitle}" -> parent "${parentTitle}"`);
                 }
               }
             }
@@ -218,9 +213,16 @@ async function copyDatabaseContent(
   console.log(`📊 Found ${hierarchyMap.size} pages with parent relationships`);
   if (hierarchyMap.size > 0) {
     console.log("📋 Hierarchy mapping:");
+    let logCount = 0;
     hierarchyMap.forEach((parentTitle, childTitle) => {
-      console.log(`   "${childTitle}" -> "${parentTitle}"`);
+      if (logCount < 10) { // Limit logs to prevent timeout
+        console.log(`   "${childTitle}" -> "${parentTitle}"`);
+      }
+      logCount++;
     });
+    if (logCount > 10) {
+      console.log(`   ... and ${logCount - 10} more mappings`);
+    }
   }
 
   // FAST approach: batch processing with Promise.allSettled
@@ -255,7 +257,6 @@ async function copyDatabaseContent(
               }
             ]
           };
-          console.log(`   📝 Adding Test Suite "${parentTitle}" for page "${getPageTitle(page)}"`);
         } else {
           // Empty Test Suite field for pages without parents
           filteredProperties["Test Suite"] = {
@@ -289,12 +290,6 @@ async function copyDatabaseContent(
         const pageResult = result.value;
         if (pageResult.success) {
           successfulCopies++;
-          const parentTitle = hierarchyMap.get(getPageTitle(batch[index].originalPage));
-          if (parentTitle) {
-            console.log(`✅ Copied page ${copiedCount}/${allPages.length} (Test Suite: ${parentTitle})`);
-          } else {
-            console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
-          }
         } else {
           failedCopies++;
           console.error(`❌ Failed to copy page ${copiedCount}/${allPages.length}:`, pageResult.error);
