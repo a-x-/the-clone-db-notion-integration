@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notion Database Cloner</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2d3748;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #3182ce;
+        }
+        button {
+            background: #3182ce;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        button:hover {
+            background: #2c5282;
+        }
+        button:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .success {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            color: #22543d;
+        }
+        .error {
+            background: #fed7d7;
+            border: 1px solid #feb2b2;
+            color: #742a2a;
+        }
+        .loading {
+            background: #bee3f8;
+            border: 1px solid #90cdf4;
+            color: #2a69ac;
+        }
+        .help {
+            background: #faf5ff;
+            border: 1px solid #d6bcfa;
+            color: #553c9a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .help a {
+            color: #553c9a;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Notion Database Cloner</h1>
+        
+        <div class="help">
+            <strong>Как получить ID:</strong><br>
+            1. Откройте базу данных или страницу в Notion<br>
+            2. Скопируйте URL: <code>notion.so/workspace/DATABASE_ID?...</code><br>
+            3. ID это 32 символа между слешами<br>
+            <a href="https://developers.notion.com/docs/working-with-databases#adding-pages-to-a-database" target="_blank">Подробнее в документации</a>
+        </div>
+        
+        <form id="cloneForm">
+            <div class="form-group">
+                <label for="sourceDb">Source Database ID *</label>
+                <input 
+                    type="text" 
+                    id="sourceDb" 
+                    placeholder="a1b2c3d4e5f67890abcdef1234567890" 
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="parentPage">Parent Page ID *</label>
+                <input 
+                    type="text" 
+                    id="parentPage" 
+                    placeholder="z9y8x7w6v5u43210987654321fedcba" 
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="maxRows">Max Rows to Copy</label>
+                <input 
+                    type="number" 
+                    id="maxRows" 
+                    placeholder="100" 
+                    value="100" 
+                    min="1" 
+                    max="500"
+                >
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="copyContent" checked> 
+                    Copy database content (not just structure)
+                </label>
+            </div>
+            
+            <button type="submit" id="submitBtn">
+                Clone Database
+            </button>
+        </form>
+        
+        <div id="result"></div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('cloneForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultDiv = document.getElementById('result');
+        
+        function showResult(message, type = 'success') {
+            resultDiv.innerHTML = message;
+            resultDiv.className = `result ${type}`;
+        }
+        
+        function formatResponse(data) {
+            return JSON.stringify(data, null, 2);
+        }
+        
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            
+            const sourceDb = document.getElementById('sourceDb').value.trim();
+            const parentPage = document.getElementById('parentPage').value.trim();
+            const maxRows = parseInt(document.getElementById('maxRows').value) || 100;
+            const copyContent = document.getElementById('copyContent').checked;
+            
+            if (!sourceDb || !parentPage) {
+                showResult('Please fill in all required fields', 'error');
+                return;
+            }
+            
+            // Показываем загрузку
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Cloning...';
+            showResult('🔄 Cloning database...', 'loading');
+            
+            try {
+                const response = await fetch('/api/duplicate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sourceDatabaseId: sourceDb,
+                        parentPageId: parentPage,
+                        maxRows: maxRows,
+                        copyContent: copyContent
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.ok) {
+                    showResult(
+                        `✅ Success!\n\nNew Database ID: ${data.data.newDatabaseId}\nTitle: ${data.data.title}\nCopied Rows: ${data.data.copiedRows}\n\nFull Response:\n${formatResponse(data)}`,
+                        'success'
+                    );
+                } else {
+                    showResult(`❌ Error: ${data.error}\n\nFull Response:\n${formatResponse(data)}`, 'error');
+                }
+                
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Clone Database';
+            }
+        };
+        
+        // Проверяем health при загрузке
+        fetch('/api/health')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'healthy') {
+                    console.log('✅ API is healthy:', data);
+                } else {
+                    console.warn('⚠️ API health check failed:', data);
+                }
+            })
+            .catch(err => console.error('❌ Health check failed:', err));
+    </script>
+</body>
+</html> 
