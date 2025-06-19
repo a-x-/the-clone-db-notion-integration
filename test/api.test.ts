@@ -7,8 +7,8 @@ import healthHandler from "../api/health.js";
 const mockEnv = {
   NOTION_TOKEN: "secret_test_token_123",
   SOURCE_DATABASE_ID: "12345678901234567890123456789012",
-  PARENT_PAGE_ID: "98765432109876543210987654321098", 
-  NEW_DATABASE_NAME: "Test Database Clone"
+  PARENT_PAGE_ID: "98765432109876543210987654321098",
+  NEW_DATABASE_NAME: "Test Database Clone",
 };
 
 // Utilities for managing environment variables in tests
@@ -37,17 +37,14 @@ const envUtils = {
       }
     }
     this.backup = {};
-  }
+  },
 };
 
 // Mock fetch globally for Notion API calls
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-function createMockRequest(
-  method = "POST",
-  body = {}
-): VercelRequest {
+function createMockRequest(method = "POST", body = {}): VercelRequest {
   return {
     method,
     body,
@@ -64,7 +61,7 @@ function createMockResponse() {
     setHeader: vi.fn().mockReturnThis(),
     end: vi.fn().mockReturnThis(),
   };
-  return res as any;
+  return res as unknown as VercelResponse;
 }
 
 describe("API Endpoints", () => {

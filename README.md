@@ -4,7 +4,7 @@ A serverless application that allows you to clone Notion databases with a simple
 
 ## ✨ Features
 
-- **🔄 Database Cloning**: Clone any Notion database structure to a new location
+- **🔄 Database Cloning**: Clone any Notion database structure AND content to a new location
 - **🌐 Web Interface**: Easy-to-use web form for inputting database and page IDs
 - **⚡ Serverless**: Fast and scalable, deployed on Vercel
 - **🔒 Secure**: Uses your Notion integration token for secure API access
@@ -119,7 +119,8 @@ Response:
   "success": true,
   "newDatabaseId": "98765432109876543210987654321098",
   "newDatabaseUrl": "https://notion.so/98765432109876543210987654321098",
-  "message": "Database \"My Database Copy\" successfully duplicated!"
+  "message": "Database \"My Database Copy\" successfully cloned with 15 pages!",
+  "copiedPagesCount": 15
 }
 ```
 
@@ -233,8 +234,9 @@ If you encounter issues:
 
 ## 🎯 Roadmap
 
-- [ ] Support for copying database content (pages)
+- [x] Support for copying database content (pages) ✅
 - [ ] Batch operations for multiple databases
+- [ ] Copy database page content (rich text blocks)
 - [ ] Database comparison tools
 - [ ] Export/import functionality
 - [ ] Advanced filtering options

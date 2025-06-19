@@ -12,6 +12,7 @@ interface SuccessResponse {
   newDatabaseId: string;
   newDatabaseUrl: string;
   message: string;
+  copiedPagesCount: number;
 }
 
 const notion = new Client({
@@ -23,11 +24,11 @@ function validateEnvironment(): void {
   if (!process.env.NOTION_TOKEN) {
     throw new Error("NOTION_TOKEN environment variable is required");
   }
-  
+
   if (!process.env.SOURCE_DATABASE_ID) {
     throw new Error("SOURCE_DATABASE_ID environment variable is required");
   }
-  
+
   if (!process.env.PARENT_PAGE_ID) {
     throw new Error("PARENT_PAGE_ID environment variable is required");
   }
@@ -39,6 +40,57 @@ function validateNotionId(id: string, idType: string): void {
   if (cleanId.length !== 32 || !/^[a-f0-9]+$/i.test(cleanId)) {
     throw new Error(`Invalid ${idType} format. Must be 32 characters.`);
   }
+}
+
+// Copy database pages content
+async function copyDatabaseContent(
+  sourceDatabaseId: string,
+  targetDatabaseId: string,
+): Promise<number> {
+  let allPages: any[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined = undefined;
+
+  // Get all pages from source database
+  while (hasMore) {
+    const response = await notion.databases.query({
+      database_id: sourceDatabaseId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    allPages = allPages.concat(response.results);
+    hasMore = response.has_more;
+    startCursor = response.next_cursor || undefined;
+  }
+
+  console.log(`Found ${allPages.length} pages to copy`);
+
+  // Copy each page to the new database
+  let copiedCount = 0;
+  for (const page of allPages) {
+    try {
+      // Extract properties from the source page
+      const pageProperties = page.properties;
+
+      // Create new page in target database
+      await notion.pages.create({
+        parent: {
+          type: "database_id",
+          database_id: targetDatabaseId,
+        },
+        properties: pageProperties,
+      });
+
+      copiedCount++;
+      console.log(`Copied page ${copiedCount}/${allPages.length}`);
+    } catch (error) {
+      console.error("Error copying page:", error);
+      // Continue copying other pages even if one fails
+    }
+  }
+
+  return copiedCount;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -73,10 +125,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     validateNotionId(sourceDatabaseId, "SOURCE_DATABASE_ID");
     validateNotionId(parentPageId, "PARENT_PAGE_ID");
 
+    console.log("Starting database cloning process...");
+    console.log(`Source Database ID: ${sourceDatabaseId}`);
+    console.log(`Parent Page ID: ${parentPageId}`);
+    console.log(`New Database Name: ${newName}`);
+
     // Get source database
     const sourceDatabase = await notion.databases.retrieve({
       database_id: sourceDatabaseId,
     });
+
+    console.log("Successfully retrieved source database");
 
     // Create new database
     const newDatabase = await notion.databases.create({
@@ -95,6 +154,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       properties: sourceDatabase.properties as any,
     });
 
+    console.log(`Successfully created new database: ${newDatabase.id}`);
+
+    // Copy all pages from source to target database
+    const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
+
+    console.log(`Successfully copied ${copiedPagesCount} pages`);
+
     // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;
 
@@ -102,7 +168,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned!`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages!`,
+      copiedPagesCount,
     };
 
     return res.status(200).json(successResponse);
@@ -130,7 +197,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const errorResponse: ErrorResponse = {
       error: errorMessage,
-      details: process.env.NODE_ENV === "development" ? error instanceof Error ? error.message : String(error) : undefined,
+      details:
+        process.env.NODE_ENV === "development"
+          ? error instanceof Error
+            ? error.message
+            : String(error)
+          : undefined,
     };
 
     return res.status(statusCode).json(errorResponse);
