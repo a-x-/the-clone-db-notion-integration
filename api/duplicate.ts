@@ -163,20 +163,52 @@ async function copyDatabaseContent(
 
   // Analyze hierarchy - find which pages are sub-items of others
   console.log("🔍 Analyzing hierarchy to populate Test Suite field...");
-  const hierarchyMap = new Map<string, string>(); // childId -> parentTitle
+  console.log("🔍 Looking for hierarchy fields: Sub-items, Sub-item, Parent item, Related to Checklist (Sub-item)");
+  
+  const hierarchyMap = new Map<string, string>(); // pageTitle -> parentTitle
   
   for (const page of allPages) {
-    if (page?.properties?.["Sub-items"]) {
-      const subItemsProperty = page.properties["Sub-items"];
-      
-      if (subItemsProperty?.type === 'relation' && subItemsProperty?.relation) {
-        const subItems = subItemsProperty.relation;
-        const parentTitle = getPageTitle(page);
+    const pageTitle = getPageTitle(page);
+    console.log(`🔍 Analyzing page: "${pageTitle}" (ID: ${page.id})`);
+    
+    // Check all possible hierarchy field names
+    const hierarchyFields = ['Sub-items', 'Sub-item', 'Parent item', 'Related to Checklist (Sub-item)', 'Related to Checklist (Parent item)'];
+    
+    for (const fieldName of hierarchyFields) {
+      if (page?.properties?.[fieldName]) {
+        const hierarchyProperty = page.properties[fieldName];
+        console.log(`   Found ${fieldName} property:`, JSON.stringify(hierarchyProperty, null, 2));
         
-        // For each sub-item, record this page as its parent
-        for (const subItem of subItems) {
-          if (subItem.id) {
-            hierarchyMap.set(subItem.id, parentTitle);
+        if (hierarchyProperty?.type === 'relation' && hierarchyProperty?.relation) {
+          const relations = hierarchyProperty.relation;
+          console.log(`   ${fieldName} has ${relations.length} relations`);
+          
+          // For Sub-items or Sub-item fields - this page is parent of the related items
+          if (fieldName.includes('Sub-item') || fieldName === 'Sub-items') {
+            for (const relatedItem of relations) {
+              if (relatedItem.id) {
+                const childPage = allPages.find(p => p.id === relatedItem.id);
+                if (childPage) {
+                  const childTitle = getPageTitle(childPage);
+                  hierarchyMap.set(childTitle, pageTitle);
+                  console.log(`   📝 Mapping child "${childTitle}" -> parent "${pageTitle}"`);
+                }
+              }
+            }
+          }
+          
+          // For Parent item fields - the related items are parents of this page
+          if (fieldName.includes('Parent item')) {
+            for (const relatedItem of relations) {
+              if (relatedItem.id) {
+                const parentPage = allPages.find(p => p.id === relatedItem.id);
+                if (parentPage) {
+                  const parentTitle = getPageTitle(parentPage);
+                  hierarchyMap.set(pageTitle, parentTitle);
+                  console.log(`   📝 Mapping child "${pageTitle}" -> parent "${parentTitle}"`);
+                }
+              }
+            }
           }
         }
       }
@@ -184,10 +216,18 @@ async function copyDatabaseContent(
   }
   
   console.log(`📊 Found ${hierarchyMap.size} pages with parent relationships`);
+  if (hierarchyMap.size > 0) {
+    console.log("📋 Hierarchy mapping:");
+    hierarchyMap.forEach((parentTitle, childTitle) => {
+      console.log(`   "${childTitle}" -> "${parentTitle}"`);
+    });
+  }
 
   // FAST approach: batch processing with Promise.allSettled
   const BATCH_SIZE = 10; // Process 10 pages at once to avoid API limits
   let copiedCount = 0;
+  let successfulCopies = 0;
+  let failedCopies = 0;
   
   // Process pages in batches
   for (let i = 0; i < allPages.length; i += BATCH_SIZE) {
@@ -197,12 +237,12 @@ async function copyDatabaseContent(
     // Create promises for this batch
     const batchPromises = batch
       .filter(page => 'properties' in page) // Type guard
-      .map(async (page) => {
+      .map(async (page, batchIndex) => {
         const pageProperties = (page as any).properties;
         const filteredProperties = filterPropertiesForCreation(pageProperties);
 
         // Add Test Suite field with parent name if this page has a parent
-        const parentTitle = hierarchyMap.get(page.id);
+        const parentTitle = hierarchyMap.get(getPageTitle(page));
         if (parentTitle) {
           filteredProperties["Test Suite"] = {
             type: "rich_text",
@@ -215,6 +255,7 @@ async function copyDatabaseContent(
               }
             ]
           };
+          console.log(`   📝 Adding Test Suite "${parentTitle}" for page "${getPageTitle(page)}"`);
         } else {
           // Empty Test Suite field for pages without parents
           filteredProperties["Test Suite"] = {
@@ -223,13 +264,19 @@ async function copyDatabaseContent(
           };
         }
 
-        return notion.pages.create({
-          parent: {
-            type: "database_id",
-            database_id: targetDatabaseId,
-          },
-          properties: filteredProperties,
-        });
+        try {
+          const result = await notion.pages.create({
+            parent: {
+              type: "database_id",
+              database_id: targetDatabaseId,
+            },
+            properties: filteredProperties,
+          });
+          return { success: true, result, originalPage: page, batchIndex };
+        } catch (error) {
+          console.error(`❌ Error creating page "${getPageTitle(page)}":`, error);
+          return { success: false, error, originalPage: page, batchIndex };
+        }
       });
 
     // Execute batch in parallel
@@ -237,25 +284,31 @@ async function copyDatabaseContent(
     
     // Count successful copies
     results.forEach((result, index) => {
+      copiedCount++;
       if (result.status === 'fulfilled') {
-        copiedCount++;
-        const parentTitle = hierarchyMap.get(batch[index].id);
-        if (parentTitle) {
-          console.log(`✅ Copied page ${copiedCount}/${allPages.length} (Test Suite: ${parentTitle})`);
+        const pageResult = result.value;
+        if (pageResult.success) {
+          successfulCopies++;
+          const parentTitle = hierarchyMap.get(getPageTitle(batch[index].originalPage));
+          if (parentTitle) {
+            console.log(`✅ Copied page ${copiedCount}/${allPages.length} (Test Suite: ${parentTitle})`);
+          } else {
+            console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
+          }
         } else {
-          console.log(`✅ Copied page ${copiedCount}/${allPages.length}`);
+          failedCopies++;
+          console.error(`❌ Failed to copy page ${copiedCount}/${allPages.length}:`, pageResult.error);
         }
       } else {
-        console.error(`❌ Error copying page ${i + index + 1}:`, result.reason);
+        failedCopies++;
+        console.error(`❌ Promise rejected for page ${copiedCount}/${allPages.length}:`, result.reason);
       }
     });
   }
 
-  console.log(`🎉 Successfully copied ${copiedCount} total pages`);
-  return copiedCount;
+  console.log(`🎉 Processing completed: ${successfulCopies} successful, ${failedCopies} failed, ${copiedCount} total processed`);
+  return successfulCopies;
 }
-
-
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers for all responses

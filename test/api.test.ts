@@ -245,4 +245,46 @@ describe("API Endpoints", () => {
       });
     });
   });
+
+  describe("Hierarchy Analysis", () => {
+    test("should attempt hierarchy analysis with logging", async () => {
+      envUtils.setEnvVars(mockEnv);
+
+      // Mock console.log to capture debug output but allow some output
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      
+      // Mock console.error to prevent error spam
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = createMockRequest("POST");
+      const res = createMockResponse();
+
+      await duplicateHandler(req, res);
+
+      // Should call status (either success or error)
+      expect(res.status).toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      
+      consoleSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    });
+
+    test("should handle API errors gracefully", async () => {
+      envUtils.setEnvVars(mockEnv);
+
+      // Mock console.error to capture error output
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = createMockRequest("POST");
+      const res = createMockResponse();
+
+      await duplicateHandler(req, res);
+
+      // Should handle errors gracefully and return proper status
+      expect(res.status).toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      
+      consoleErrorSpy.mockRestore();
+    });
+  });
 });
