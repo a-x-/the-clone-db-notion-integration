@@ -235,6 +235,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Filter database properties to exclude problematic ones (relation, rollup)
     const filteredDatabaseProperties = filterDatabaseSchemaProperties(sourceDatabase.properties);
 
+    // Add sub-items support by creating a self-relation property
+    const propertiesWithSubItems: any = {
+      ...filteredDatabaseProperties,
+      "Sub-items": {
+        type: "relation",
+        relation: {
+          database_id: "", // Will be set after database creation
+          type: "dual_property",
+          dual_property: {
+            name: "Parent item"
+          }
+        }
+      }
+    };
+
     // Create new database
     const newDatabase = await notion.databases.create({
       parent: {
@@ -249,7 +264,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
       ],
-      properties: filteredDatabaseProperties as any,
+      properties: propertiesWithSubItems as any,
+    });
+
+    console.log("✅ Successfully created new database with sub-items support");
+
+    // Update the Sub-items relation to point to the newly created database
+    await notion.databases.update({
+      database_id: newDatabase.id,
+      properties: {
+        "Sub-items": {
+          type: "relation",
+          relation: {
+            database_id: newDatabase.id,
+            type: "dual_property",
+            dual_property: {
+              name: "Parent item"
+            }
+          }
+        }
+      } as any
     });
 
     console.log(`✅ Successfully created new database: ${newDatabase.id}`);
