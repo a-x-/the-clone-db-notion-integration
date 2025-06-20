@@ -5,7 +5,7 @@
     "type": "module",
     "scripts": {
         "dev": "vercel dev",
-        "test": "vitest",
+        "test": "vitest --run",
         "test:watch": "vitest --watch",
         "test:ui": "vitest --ui",
         "lint": "biome check .",

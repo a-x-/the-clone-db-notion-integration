@@ -22,10 +22,10 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // If this is the "Done" property, save it for later
+    // If this is the "Done" property, save it for later with "1. " prefix
     if (key === 'Done') {
       doneProperty = value;
-      donePropertyKey = key;
+      donePropertyKey = '1. Done';
       continue;
     }
     
@@ -68,6 +68,12 @@ function filterPropertiesForCreation(properties: any): any {
     }
     
     if (prop.type === 'created_time' || prop.type === 'last_edited_time') {
+      continue;
+    }
+    
+    // Rename "Done" property to "1. Done" for alphabetical sorting in target database
+    if (key === 'Done') {
+      filteredProperties['1. Done'] = value;
       continue;
     }
     
@@ -135,10 +141,27 @@ describe('Property Filtering', () => {
       const result = filterPropertiesForCreation({});
       expect(result).toEqual({});
     });
+
+    it('should rename "Done" property to "1. Done" in page creation', () => {
+      const input = {
+        'Name': { type: 'title', title: [{ text: { content: 'Test' } }] },
+        'Done': { type: 'checkbox', checkbox: true },
+        'Status': { type: 'select', select: { name: 'In Progress' } }
+      };
+
+      const result = filterPropertiesForCreation(input);
+
+      expect(result).toEqual({
+        'Name': { type: 'title', title: [{ text: { content: 'Test' } }] },
+        '1. Done': { type: 'checkbox', checkbox: true },
+        'Status': { type: 'select', select: { name: 'In Progress' } }
+      });
+      expect(result).not.toHaveProperty('Done'); // Original key should be replaced
+    });
   });
 
   describe('Done property positioning', () => {
-    it('should move "Done" property to first position in schema', () => {
+    it('should rename "Done" property to "1. Done" and place at first position', () => {
       const input = {
         'Name': { type: 'title' },
         'Status': { type: 'select' },
@@ -149,10 +172,11 @@ describe('Property Filtering', () => {
       const result = filterDatabaseSchemaProperties(input);
       const keys = Object.keys(result);
 
-      expect(keys[0]).toBe('Done');
+      expect(keys[0]).toBe('1. Done');
       expect(keys).toContain('Name');
       expect(keys).toContain('Status');
       expect(keys).toContain('Priority');
+      expect(keys).not.toContain('Done'); // Original key should be replaced
     });
 
     it('should handle schema without "Done" property', () => {
@@ -177,8 +201,9 @@ describe('Property Filtering', () => {
       const result = filterDatabaseSchemaProperties(input);
       const keys = Object.keys(result);
 
-      expect(keys[0]).toBe('Done');
-      expect(result.Done.type).toBe('select');
+      expect(keys[0]).toBe('1. Done');
+      expect(result['1. Done'].type).toBe('select');
+      expect(keys).not.toContain('Done'); // Original key should be replaced
     });
   });
 

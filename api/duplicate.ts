@@ -70,11 +70,11 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // If this is the "Done" property, save it for later
+    // If this is the "Done" property, save it for later with "1. " prefix
     if (key === 'Done') {
-      console.log(`📋 Found "Done" property, will move to first position`);
+      console.log(`📋 Found "Done" property, will rename to "1. Done" for alphabetical sorting`);
       doneProperty = value;
-      donePropertyKey = key;
+      donePropertyKey = '1. Done';
       continue;
     }
     
@@ -82,10 +82,10 @@ function filterDatabaseSchemaProperties(properties: any): any {
     filteredProperties[key] = value;
   }
   
-  // Add "Done" property at the beginning if it exists
+  // Add "1. Done" property at the beginning if it exists
   if (doneProperty && donePropertyKey) {
     const reorderedProperties = { [donePropertyKey]: doneProperty, ...filteredProperties };
-    console.log(`🔄 Moved "Done" property to first position`);
+    console.log(`🔄 Renamed "Done" to "${donePropertyKey}" and placed at first position`);
     console.log("✅ Finished processing database schema properties");
     return reorderedProperties;
   }
@@ -129,6 +129,13 @@ function filterPropertiesForCreation(properties: any): any {
     // Skip created_time and last_edited_time as they are system properties
     if (prop.type === 'created_time' || prop.type === 'last_edited_time') {
       console.log(`Skipping system property: ${key}`);
+      continue;
+    }
+    
+    // Rename "Done" property to "1. Done" for alphabetical sorting in target database
+    if (key === 'Done') {
+      filteredProperties['1. Done'] = value;
+      console.log(`Renamed property "${key}" to "1. Done"`);
       continue;
     }
     
@@ -429,6 +436,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log("✅ Successfully created new database");
 
     console.log(`✅ Successfully created new database: ${newDatabase.id}`);
+
+    // Note: Notion API doesn't support reordering properties
+    // Property order is controlled by Notion UI, not API
+    console.log("ℹ️ Property order is controlled by Notion UI (API limitation)")
 
     // Copy all pages from source to target database as flat list (STEP 1)
     const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
