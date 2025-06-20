@@ -166,6 +166,63 @@ function findParentTitle(pages: any[], parentId: string): string {
   return parentPage ? getPageTitle(parentPage) : 'Unknown Parent';
 }
 
+// Function to rename properties back to original names after copying
+async function renamePropertiesBackToOriginal(databaseId: string): Promise<void> {
+  console.log("🔄 Starting to rename properties back to original names...");
+  
+  try {
+    // Get current database structure
+    const database = await notion.databases.retrieve({
+      database_id: databaseId,
+    });
+    
+    const currentProperties = database.properties;
+    const updatedProperties: any = {};
+    
+    // Process each property and remove prefixes
+    for (const [currentName, value] of Object.entries(currentProperties)) {
+      const prop = value as any;
+      
+      // Rename "1. Done" back to "Done"
+      if (currentName === '1. Done') {
+        console.log(`📝 Renaming "${currentName}" back to "Done"`);
+        updatedProperties.Done = {
+          type: prop.type,
+          ...{ [prop.type]: prop[prop.type] || {} }
+        };
+        // Mark old property for removal by setting to null
+        updatedProperties['1. Done'] = null;
+      }
+      
+              // Rename "z. Last Edited By" back to "Last Edited By"
+        if (currentName === 'z. Last Edited By') {
+          console.log(`📝 Renaming "${currentName}" back to "Last Edited By"`);
+          updatedProperties['Last Edited By'] = {
+            type: prop.type,
+            ...{ [prop.type]: prop[prop.type] || {} }
+          };
+          // Mark old property for removal by setting to null
+          updatedProperties['z. Last Edited By'] = null;
+        }
+    }
+    
+    // Only update if we have properties to rename
+    if (Object.keys(updatedProperties).length > 0) {
+      await notion.databases.update({
+        database_id: databaseId,
+        properties: updatedProperties,
+      });
+      console.log("✅ Successfully renamed properties back to original names");
+    } else {
+      console.log("ℹ️ No properties to rename");
+    }
+    
+  } catch (error) {
+    console.error("❌ Error renaming properties:", error);
+    console.log("⚠️ Properties will need to be renamed manually in Notion UI");
+  }
+}
+
 // STEP 1: Copy database pages content with Test Suite field populated
 async function copyDatabaseContent(
   sourceDatabaseId: string,
@@ -403,12 +460,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     console.log("🔧 Added Test Suite field for parent item names");
     
-    // Add Last Edited By field
-    filteredDatabaseProperties["Last Edited By"] = {
+    // Add Last Edited By field with "z. " prefix for alphabetical sorting
+    filteredDatabaseProperties["z. Last Edited By"] = {
       type: "last_edited_by",
       last_edited_by: {}
     };
-    console.log("🔧 Added Last Edited By field");
+    console.log("🔧 Added z. Last Edited By field");
     
     // Note: Notion API doesn't support wrap configuration for rich_text fields
     // Wrap behavior is controlled by the Notion UI, not the API
@@ -445,6 +502,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const copiedPagesCount = await copyDatabaseContent(sourceDatabaseId, newDatabase.id);
 
     console.log(`🎉 Successfully copied ${copiedPagesCount} pages`);
+
+    // STEP 2: Rename properties back to original names for clean appearance
+    await renamePropertiesBackToOriginal(newDatabase.id);
 
     // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;

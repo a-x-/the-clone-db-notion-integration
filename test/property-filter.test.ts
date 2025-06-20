@@ -35,8 +35,22 @@ function filterDatabaseSchemaProperties(properties: any): any {
   
   // Add "Done" property at the beginning if it exists
   if (doneProperty && donePropertyKey) {
-    return { [donePropertyKey]: doneProperty, ...filteredProperties };
+    const reorderedProperties = { [donePropertyKey]: doneProperty, ...filteredProperties };
+    
+    // Add Last Edited By field with "z. " prefix for alphabetical sorting (to be last)
+    reorderedProperties["z. Last Edited By"] = {
+      type: "last_edited_by",
+      last_edited_by: {}
+    };
+    
+    return reorderedProperties;
   }
+  
+  // Add Last Edited By field with "z. " prefix even if no Done property
+  filteredProperties["z. Last Edited By"] = {
+    type: "last_edited_by", 
+    last_edited_by: {}
+  };
   
   return filteredProperties;
 }
@@ -97,7 +111,8 @@ describe('Property Filtering', () => {
 
       expect(result).toEqual({
         'Name': { type: 'title' },
-        'Status': { type: 'select' }
+        'Status': { type: 'select' },
+        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
       });
     });
 
@@ -113,7 +128,11 @@ describe('Property Filtering', () => {
 
       const result = filterDatabaseSchemaProperties(input);
 
-      expect(result).toEqual(input);
+      const expected = {
+        ...input,
+        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
+      };
+      expect(result).toEqual(expected);
     });
   });
 
@@ -188,7 +207,11 @@ describe('Property Filtering', () => {
 
       const result = filterDatabaseSchemaProperties(input);
 
-      expect(result).toEqual(input);
+      const expected = {
+        ...input,
+        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
+      };
+      expect(result).toEqual(expected);
     });
 
     it('should handle different types of "Done" property', () => {
@@ -204,6 +227,34 @@ describe('Property Filtering', () => {
       expect(keys[0]).toBe('1. Done');
       expect(result['1. Done'].type).toBe('select');
       expect(keys).not.toContain('Done'); // Original key should be replaced
+    });
+
+    it('should add "z. Last Edited By" field for alphabetical sorting', () => {
+      const input = {
+        'Name': { type: 'title' },
+        'Status': { type: 'select' },
+        'Done': { type: 'checkbox' }
+      };
+
+      const result = filterDatabaseSchemaProperties(input);
+      const keys = Object.keys(result);
+
+      expect(keys).toContain('z. Last Edited By');
+      expect(result['z. Last Edited By'].type).toBe('last_edited_by');
+      expect(keys[keys.length - 1]).toBe('z. Last Edited By'); // Should be last
+    });
+
+    it('should add "z. Last Edited By" even without Done property', () => {
+      const input = {
+        'Name': { type: 'title' },
+        'Status': { type: 'select' },
+        'Priority': { type: 'select' }
+      };
+
+      const result = filterDatabaseSchemaProperties(input);
+
+      expect(result).toHaveProperty('z. Last Edited By');
+      expect(result['z. Last Edited By'].type).toBe('last_edited_by');
     });
   });
 
