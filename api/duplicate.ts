@@ -42,6 +42,36 @@ function validateNotionId(id: string, idType: string): void {
   }
 }
 
+// Move "Done" option to first position in select fields
+function moveDoneToFirst(selectProperty: any): any {
+  if (!selectProperty.select || !selectProperty.select.options) {
+    return selectProperty;
+  }
+
+  const options = [...selectProperty.select.options];
+  const doneIndex = options.findIndex(option => 
+    option.name === 'Done' || option.name === 'done' || option.name === 'DONE'
+  );
+
+  if (doneIndex > 0) {
+    // Remove "Done" from its current position and add it to the beginning
+    const doneOption = options.splice(doneIndex, 1)[0];
+    options.unshift(doneOption);
+    
+    console.log(`🔄 Moved "Done" option to first position in select field`);
+    
+    return {
+      ...selectProperty,
+      select: {
+        ...selectProperty.select,
+        options: options
+      }
+    };
+  }
+
+  return selectProperty;
+}
+
 // Filter database schema properties to exclude problematic ones
 function filterDatabaseSchemaProperties(properties: any): any {
   const filteredProperties: any = {};
@@ -61,7 +91,13 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // Include all other property types (title, rich_text, number, select, etc.)
+    // For select properties, move "Done" option to first position
+    if (prop.type === 'select') {
+      filteredProperties[key] = moveDoneToFirst(prop);
+      continue;
+    }
+    
+    // Include all other property types (title, rich_text, number, etc.)
     filteredProperties[key] = value;
   }
   

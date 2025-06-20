@@ -1,6 +1,35 @@
 import { describe, it, expect } from 'vitest';
 
 // Import the functions (this is a simplified test, actual functions are inside the main file)
+
+// Move "Done" option to first position in select fields
+function moveDoneToFirst(selectProperty: any): any {
+  if (!selectProperty.select || !selectProperty.select.options) {
+    return selectProperty;
+  }
+
+  const options = [...selectProperty.select.options];
+  const doneIndex = options.findIndex(option => 
+    option.name === 'Done' || option.name === 'done' || option.name === 'DONE'
+  );
+
+  if (doneIndex > 0) {
+    // Remove "Done" from its current position and add it to the beginning
+    const doneOption = options.splice(doneIndex, 1)[0];
+    options.unshift(doneOption);
+    
+    return {
+      ...selectProperty,
+      select: {
+        ...selectProperty.select,
+        options: options
+      }
+    };
+  }
+
+  return selectProperty;
+}
+
 function filterDatabaseSchemaProperties(properties: any): any {
   const filteredProperties: any = {};
   
@@ -19,7 +48,13 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // Include all other property types (title, rich_text, number, select, etc.)
+    // For select properties, move "Done" option to first position
+    if (prop.type === 'select') {
+      filteredProperties[key] = moveDoneToFirst(prop);
+      continue;
+    }
+    
+    // Include all other property types (title, rich_text, number, etc.)
     filteredProperties[key] = value;
   }
   
@@ -119,6 +154,133 @@ describe('Property Filtering', () => {
     it('should handle empty properties object', () => {
       const result = filterPropertiesForCreation({});
       expect(result).toEqual({});
+    });
+  });
+
+  describe('moveDoneToFirst', () => {
+    it('should move "Done" option to first position', () => {
+      const selectProperty = {
+        type: 'select',
+        select: {
+          options: [
+            { name: 'In Progress', color: 'yellow' },
+            { name: 'Done', color: 'green' },
+            { name: 'To Do', color: 'red' }
+          ]
+        }
+      };
+
+      const result = moveDoneToFirst(selectProperty);
+
+      expect(result.select.options[0].name).toBe('Done');
+      expect(result.select.options[1].name).toBe('In Progress');
+      expect(result.select.options[2].name).toBe('To Do');
+    });
+
+    it('should handle case-insensitive "Done" variations', () => {
+      const selectProperty = {
+        type: 'select',
+        select: {
+          options: [
+            { name: 'In Progress', color: 'yellow' },
+            { name: 'done', color: 'green' },
+            { name: 'To Do', color: 'red' }
+          ]
+        }
+      };
+
+      const result = moveDoneToFirst(selectProperty);
+
+      expect(result.select.options[0].name).toBe('done');
+    });
+
+    it('should not change order if "Done" is already first', () => {
+      const selectProperty = {
+        type: 'select',
+        select: {
+          options: [
+            { name: 'Done', color: 'green' },
+            { name: 'In Progress', color: 'yellow' },
+            { name: 'To Do', color: 'red' }
+          ]
+        }
+      };
+
+      const result = moveDoneToFirst(selectProperty);
+
+      expect(result.select.options[0].name).toBe('Done');
+      expect(result.select.options[1].name).toBe('In Progress');
+      expect(result.select.options[2].name).toBe('To Do');
+    });
+
+    it('should not change anything if "Done" option does not exist', () => {
+      const selectProperty = {
+        type: 'select',
+        select: {
+          options: [
+            { name: 'In Progress', color: 'yellow' },
+            { name: 'Completed', color: 'green' },
+            { name: 'To Do', color: 'red' }
+          ]
+        }
+      };
+
+      const result = moveDoneToFirst(selectProperty);
+
+      expect(result.select.options[0].name).toBe('In Progress');
+      expect(result.select.options[1].name).toBe('Completed');
+      expect(result.select.options[2].name).toBe('To Do');
+    });
+
+    it('should handle select property without options', () => {
+      const selectProperty = {
+        type: 'select',
+        select: {}
+      };
+
+      const result = moveDoneToFirst(selectProperty);
+
+      expect(result).toEqual(selectProperty);
+    });
+  });
+
+  describe('filterDatabaseSchemaProperties with Done reordering', () => {
+    it('should move Done to first position in select fields during filtering', () => {
+      const input = {
+        'Name': { type: 'title' },
+        'Status': { 
+          type: 'select',
+          select: {
+            options: [
+              { name: 'To Do', color: 'red' },
+              { name: 'In Progress', color: 'yellow' },
+              { name: 'Done', color: 'green' }
+            ]
+          }
+        },
+        'Priority': { 
+          type: 'select',
+          select: {
+            options: [
+              { name: 'Low', color: 'gray' },
+              { name: 'Medium', color: 'yellow' },
+              { name: 'High', color: 'red' }
+            ]
+          }
+        }
+      };
+
+      const result = filterDatabaseSchemaProperties(input);
+
+      // Status field should have Done moved to first position
+      expect(result.Status.select.options[0].name).toBe('Done');
+      expect(result.Status.select.options[1].name).toBe('To Do');
+      expect(result.Status.select.options[2].name).toBe('In Progress');
+
+      // Priority field should remain unchanged (no Done option)
+      expect(result.Priority.select.options[0].name).toBe('Low');
+      expect(result.Priority.select.options[1].name).toBe('Medium');
+      expect(result.Priority.select.options[2].name).toBe('High');
     });
   });
 }); 
