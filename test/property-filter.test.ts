@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 // Configuration for property prefixes used for alphabetical sorting
 const PROPERTY_PREFIXES = {
-  'Done': '1. ',
+  'Done': 'a. ',
+  'Action': 'b. ',
+  'URL': 'u. ',
   'Last Edited By': 'z. '
 } as const;
 
@@ -277,13 +279,17 @@ describe('Property Filtering', () => {
 
   describe('Helper functions', () => {
     it('should getPrefixedName correctly', () => {
-      expect(getPrefixedName('Done')).toBe('1. Done');
+      expect(getPrefixedName('Done')).toBe('a. Done');
+      expect(getPrefixedName('Action')).toBe('b. Action');
+      expect(getPrefixedName('URL')).toBe('u. URL');
       expect(getPrefixedName('Last Edited By')).toBe('z. Last Edited By');
       expect(getPrefixedName('Other Property')).toBe('Other Property');
     });
 
     it('should shouldRenameProperty correctly', () => {
       expect(shouldRenameProperty('Done')).toBe(true);
+      expect(shouldRenameProperty('Action')).toBe(true);
+      expect(shouldRenameProperty('URL')).toBe(true);
       expect(shouldRenameProperty('Last Edited By')).toBe(true);
       expect(shouldRenameProperty('Other Property')).toBe(false);
     });

@@ -3,7 +3,9 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 // Configuration for property prefixes used for alphabetical sorting
 const PROPERTY_PREFIXES = {
-  'Done': '1. ',
+  'Done': 'a. ',
+  'Action': 'b. ',
+  'URL': 'u. ',
   'Last Edited By': 'z. '
 } as const;
 
@@ -181,55 +183,7 @@ function findParentTitle(pages: any[], parentId: string): string {
   return parentPage ? getPageTitle(parentPage) : 'Unknown Parent';
 }
 
-// Function to rename properties back to original names after copying
-async function renamePropertiesBackToOriginal(databaseId: string): Promise<void> {
-  console.log("🔄 Starting to rename properties back to original names...");
-  
-  try {
-    // Get current database structure
-    const database = await notion.databases.retrieve({
-      database_id: databaseId,
-    });
-    
-    const currentProperties = database.properties;
-    const updatedProperties: any = {};
-    
-    // Process configured properties and remove prefixes
-    for (const [originalName] of Object.entries(PROPERTY_PREFIXES)) {
-      const prefixedName = getPrefixedName(originalName);
-      
-      if (currentProperties[prefixedName]) {
-        const prop = currentProperties[prefixedName] as any;
-        
-        console.log(`📝 Renaming "${prefixedName}" back to "${originalName}"`);
-        
-        // Create property with original name
-        updatedProperties[originalName] = {
-          type: prop.type,
-          ...{ [prop.type]: prop[prop.type] || {} }
-        };
-        
-        // Mark prefixed property for removal by setting to null
-        updatedProperties[prefixedName] = null;
-      }
-    }
-    
-    // Only update if we have properties to rename
-    if (Object.keys(updatedProperties).length > 0) {
-      await notion.databases.update({
-        database_id: databaseId,
-        properties: updatedProperties,
-      });
-      console.log("✅ Successfully renamed properties back to original names");
-    } else {
-      console.log("ℹ️ No properties to rename");
-    }
-    
-  } catch (error) {
-    console.error("❌ Error renaming properties:", error);
-    console.log("⚠️ Properties will need to be renamed manually in Notion UI");
-  }
-}
+
 
 // STEP 1: Copy database pages content with Test Suite field populated
 async function copyDatabaseContent(
@@ -512,9 +466,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`🎉 Successfully copied ${copiedPagesCount} pages`);
 
-    // STEP 2: Rename properties back to original names for clean appearance
-    await renamePropertiesBackToOriginal(newDatabase.id);
-
     // Generate URL for the new database
     const newDatabaseUrl = `https://notion.so/${newDatabase.id.replace(/-/g, "")}`;
 
@@ -522,7 +473,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       newDatabaseId: newDatabase.id,
       newDatabaseUrl,
-      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages as flat list!`,
+      message: `Database "${newName}" successfully cloned with ${copiedPagesCount} pages as flat list! Properties are alphabetically sorted with prefixes.`,
       copiedPagesCount,
     };
 
