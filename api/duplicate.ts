@@ -310,11 +310,8 @@ async function copyDatabaseContent(
             ]
           };
         } else {
-          // Empty Test Suite field for pages without parents
-          filteredProperties["Test Suite"] = {
-            type: "rich_text",
-            rich_text: []
-          };
+          // Skip pages without parents (no Test Suite content)
+          return { success: false, error: 'No parent found - skipping page without Test Suite', originalPage: page, batchIndex };
         }
 
         try {
@@ -335,7 +332,7 @@ async function copyDatabaseContent(
     // Execute batch in parallel
     const results = await Promise.allSettled(batchPromises);
     
-    // Count successful copies
+    // Count successful copies and skipped pages
     results.forEach((result, index) => {
       copiedCount++;
       if (result.status === 'fulfilled') {
@@ -343,8 +340,13 @@ async function copyDatabaseContent(
         if (pageResult.success) {
           successfulCopies++;
         } else {
-          failedCopies++;
-          console.error(`❌ Failed to copy page ${copiedCount}/${allPages.length}:`, pageResult.error);
+          if (pageResult.error?.toString().includes('No parent found')) {
+            // This is a skipped page, don't count as failed
+            console.log(`⏭️ Skipped page without Test Suite: "${getPageTitle(pageResult.originalPage)}"`);
+          } else {
+            failedCopies++;
+            console.error(`❌ Failed to copy page ${copiedCount}/${allPages.length}:`, pageResult.error);
+          }
         }
       } else {
         failedCopies++;
@@ -385,14 +387,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const parentPageId = process.env.PARENT_PAGE_ID!;
     const baseName = process.env.NEW_DATABASE_NAME || "Cloned Database";
     
-    // Add current date to database name in human-readable format
+    // Add current date to database name in human-readable format (CET)
     const currentDate = new Date();
     const humanDate = currentDate.toLocaleDateString('ru-RU', {
       day: '2-digit',
       month: '2-digit', 
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Europe/Belgrade' // CET timezone
     });
     const newName = `${baseName} (${humanDate})`;
 
