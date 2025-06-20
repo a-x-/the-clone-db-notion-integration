@@ -42,60 +42,15 @@ function validateNotionId(id: string, idType: string): void {
   }
 }
 
-// Move "Done" option to first position in select fields
-function moveDoneToFirst(selectProperty: any): any {
-  console.log(`🔍 Processing select property:`, JSON.stringify(selectProperty, null, 2));
-  
-  if (!selectProperty.select) {
-    console.log(`❌ No select property found`);
-    return selectProperty;
-  }
-  
-  if (!selectProperty.select.options) {
-    console.log(`❌ No options found in select property`);
-    return selectProperty;
-  }
 
-  const options = [...selectProperty.select.options];
-  console.log(`📋 Found ${options.length} options:`, options.map(opt => opt.name));
-  
-  const doneIndex = options.findIndex(option => 
-    option.name === 'Done' || option.name === 'done' || option.name === 'DONE'
-  );
-
-  console.log(`🔍 "Done" option index: ${doneIndex}`);
-
-  if (doneIndex > 0) {
-    // Remove "Done" from its current position and add it to the beginning
-    const doneOption = options.splice(doneIndex, 1)[0];
-    options.unshift(doneOption);
-    
-    console.log(`🔄 Moved "Done" option to first position in select field`);
-    console.log(`📋 New options order:`, options.map(opt => opt.name));
-    
-    return {
-      ...selectProperty,
-      select: {
-        ...selectProperty.select,
-        options: options
-      }
-    };
-  }
-  
-  if (doneIndex === 0) {
-    console.log(`✅ "Done" option is already at first position`);
-  } else {
-    console.log(`❌ "Done" option not found in options`);
-  }
-
-  return selectProperty;
-}
 
 // Filter database schema properties to exclude problematic ones
 function filterDatabaseSchemaProperties(properties: any): any {
   const filteredProperties: any = {};
+  let doneProperty: any = null;
+  let donePropertyKey = '';
   
-  console.log(`🔍 Processing database schema properties...`);
+  console.log("🔍 Processing database schema properties...");
   console.log(`📊 Total properties to process: ${Object.keys(properties).length}`);
   
   for (const [key, value] of Object.entries(properties)) {
@@ -115,10 +70,11 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // For select properties, move "Done" option to first position
-    if (prop.type === 'select') {
-      console.log(`📋 Found select property "${key}", processing for "Done" option...`);
-      filteredProperties[key] = moveDoneToFirst(prop);
+    // If this is the "Done" property, save it for later
+    if (key === 'Done') {
+      console.log(`📋 Found "Done" property, will move to first position`);
+      doneProperty = value;
+      donePropertyKey = key;
       continue;
     }
     
@@ -126,7 +82,15 @@ function filterDatabaseSchemaProperties(properties: any): any {
     filteredProperties[key] = value;
   }
   
-  console.log(`✅ Finished processing database schema properties`);
+  // Add "Done" property at the beginning if it exists
+  if (doneProperty && donePropertyKey) {
+    const reorderedProperties = { [donePropertyKey]: doneProperty, ...filteredProperties };
+    console.log(`🔄 Moved "Done" property to first position`);
+    console.log("✅ Finished processing database schema properties");
+    return reorderedProperties;
+  }
+  
+  console.log("✅ Finished processing database schema properties");
   return filteredProperties;
 }
 
