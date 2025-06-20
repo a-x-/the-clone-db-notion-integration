@@ -1,6 +1,22 @@
 import { Client } from "@notionhq/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+// Configuration for property prefixes used for alphabetical sorting
+const PROPERTY_PREFIXES = {
+  'Done': '1. ',
+  'Last Edited By': 'z. '
+} as const;
+
+// Helper functions for property name transformations
+function getPrefixedName(originalName: string): string {
+  const prefix = PROPERTY_PREFIXES[originalName as keyof typeof PROPERTY_PREFIXES];
+  return prefix ? `${prefix}${originalName}` : originalName;
+}
+
+function shouldRenameProperty(propertyName: string): boolean {
+  return propertyName in PROPERTY_PREFIXES;
+}
+
 interface ErrorResponse {
   error: string;
   message?: string;
@@ -47,8 +63,7 @@ function validateNotionId(id: string, idType: string): void {
 // Filter database schema properties to exclude problematic ones
 function filterDatabaseSchemaProperties(properties: any): any {
   const filteredProperties: any = {};
-  let doneProperty: any = null;
-  let donePropertyKey = '';
+  const renamedProperties: { [key: string]: any } = {};
   
   console.log("🔍 Processing database schema properties...");
   console.log(`📊 Total properties to process: ${Object.keys(properties).length}`);
@@ -70,11 +85,11 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // If this is the "Done" property, save it for later with "1. " prefix
-    if (key === 'Done') {
-      console.log(`📋 Found "Done" property, will rename to "1. Done" for alphabetical sorting`);
-      doneProperty = value;
-      donePropertyKey = '1. Done';
+    // If this property should be renamed with prefix, save it for later
+    if (shouldRenameProperty(key)) {
+      const prefixedName = getPrefixedName(key);
+      console.log(`📋 Found "${key}" property, will rename to "${prefixedName}" for alphabetical sorting`);
+      renamedProperties[prefixedName] = value;
       continue;
     }
     
@@ -82,16 +97,15 @@ function filterDatabaseSchemaProperties(properties: any): any {
     filteredProperties[key] = value;
   }
   
-  // Add "1. Done" property at the beginning if it exists
-  if (doneProperty && donePropertyKey) {
-    const reorderedProperties = { [donePropertyKey]: doneProperty, ...filteredProperties };
-    console.log(`🔄 Renamed "Done" to "${donePropertyKey}" and placed at first position`);
-    console.log("✅ Finished processing database schema properties");
-    return reorderedProperties;
+  // Add renamed properties at the beginning for proper sorting
+  const reorderedProperties = { ...renamedProperties, ...filteredProperties };
+  
+  if (Object.keys(renamedProperties).length > 0) {
+    console.log(`🔄 Renamed properties: ${Object.keys(renamedProperties).join(', ')}`);
   }
   
   console.log("✅ Finished processing database schema properties");
-  return filteredProperties;
+  return reorderedProperties;
 }
 
 // Filter properties to exclude problematic ones for page creation
@@ -132,10 +146,11 @@ function filterPropertiesForCreation(properties: any): any {
       continue;
     }
     
-    // Rename "Done" property to "1. Done" for alphabetical sorting in target database
-    if (key === 'Done') {
-      filteredProperties['1. Done'] = value;
-      console.log(`Renamed property "${key}" to "1. Done"`);
+    // Rename properties with prefixes for alphabetical sorting in target database
+    if (shouldRenameProperty(key)) {
+      const prefixedName = getPrefixedName(key);
+      filteredProperties[prefixedName] = value;
+      console.log(`Renamed property "${key}" to "${prefixedName}"`);
       continue;
     }
     
@@ -179,31 +194,24 @@ async function renamePropertiesBackToOriginal(databaseId: string): Promise<void>
     const currentProperties = database.properties;
     const updatedProperties: any = {};
     
-    // Process each property and remove prefixes
-    for (const [currentName, value] of Object.entries(currentProperties)) {
-      const prop = value as any;
+    // Process configured properties and remove prefixes
+    for (const [originalName] of Object.entries(PROPERTY_PREFIXES)) {
+      const prefixedName = getPrefixedName(originalName);
       
-      // Rename "1. Done" back to "Done"
-      if (currentName === '1. Done') {
-        console.log(`📝 Renaming "${currentName}" back to "Done"`);
-        updatedProperties.Done = {
+      if (currentProperties[prefixedName]) {
+        const prop = currentProperties[prefixedName] as any;
+        
+        console.log(`📝 Renaming "${prefixedName}" back to "${originalName}"`);
+        
+        // Create property with original name
+        updatedProperties[originalName] = {
           type: prop.type,
           ...{ [prop.type]: prop[prop.type] || {} }
         };
-        // Mark old property for removal by setting to null
-        updatedProperties['1. Done'] = null;
+        
+        // Mark prefixed property for removal by setting to null
+        updatedProperties[prefixedName] = null;
       }
-      
-              // Rename "z. Last Edited By" back to "Last Edited By"
-        if (currentName === 'z. Last Edited By') {
-          console.log(`📝 Renaming "${currentName}" back to "Last Edited By"`);
-          updatedProperties['Last Edited By'] = {
-            type: prop.type,
-            ...{ [prop.type]: prop[prop.type] || {} }
-          };
-          // Mark old property for removal by setting to null
-          updatedProperties['z. Last Edited By'] = null;
-        }
     }
     
     // Only update if we have properties to rename
@@ -460,12 +468,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     console.log("🔧 Added Test Suite field for parent item names");
     
-    // Add Last Edited By field with "z. " prefix for alphabetical sorting
-    filteredDatabaseProperties["z. Last Edited By"] = {
+    // Add Last Edited By field with prefix for alphabetical sorting
+    const lastEditedByFieldName = getPrefixedName("Last Edited By");
+    filteredDatabaseProperties[lastEditedByFieldName] = {
       type: "last_edited_by",
       last_edited_by: {}
     };
-    console.log("🔧 Added z. Last Edited By field");
+    console.log(`🔧 Added ${lastEditedByFieldName} field`);
     
     // Note: Notion API doesn't support wrap configuration for rich_text fields
     // Wrap behavior is controlled by the Notion UI, not the API

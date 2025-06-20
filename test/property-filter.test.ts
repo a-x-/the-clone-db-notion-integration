@@ -1,11 +1,25 @@
 import { describe, it, expect } from 'vitest';
 
-// Import the functions (this is a simplified test, actual functions are inside the main file)
+// Configuration for property prefixes used for alphabetical sorting
+const PROPERTY_PREFIXES = {
+  'Done': '1. ',
+  'Last Edited By': 'z. '
+} as const;
 
+// Helper functions for property name transformations
+function getPrefixedName(originalName: string): string {
+  const prefix = PROPERTY_PREFIXES[originalName as keyof typeof PROPERTY_PREFIXES];
+  return prefix ? `${prefix}${originalName}` : originalName;
+}
+
+function shouldRenameProperty(propertyName: string): boolean {
+  return propertyName in PROPERTY_PREFIXES;
+}
+
+// Import the functions (this is a simplified test, actual functions are inside the main file)
 function filterDatabaseSchemaProperties(properties: any): any {
   const filteredProperties: any = {};
-  let doneProperty: any = null;
-  let donePropertyKey = '';
+  const renamedProperties: { [key: string]: any } = {};
   
   for (const [key, value] of Object.entries(properties)) {
     const prop = value as any;
@@ -22,10 +36,10 @@ function filterDatabaseSchemaProperties(properties: any): any {
       continue;
     }
     
-    // If this is the "Done" property, save it for later with "1. " prefix
-    if (key === 'Done') {
-      doneProperty = value;
-      donePropertyKey = '1. Done';
+    // If this property should be renamed with prefix, save it for later
+    if (shouldRenameProperty(key)) {
+      const prefixedName = getPrefixedName(key);
+      renamedProperties[prefixedName] = value;
       continue;
     }
     
@@ -33,26 +47,17 @@ function filterDatabaseSchemaProperties(properties: any): any {
     filteredProperties[key] = value;
   }
   
-  // Add "Done" property at the beginning if it exists
-  if (doneProperty && donePropertyKey) {
-    const reorderedProperties = { [donePropertyKey]: doneProperty, ...filteredProperties };
-    
-    // Add Last Edited By field with "z. " prefix for alphabetical sorting (to be last)
-    reorderedProperties["z. Last Edited By"] = {
-      type: "last_edited_by",
-      last_edited_by: {}
-    };
-    
-    return reorderedProperties;
-  }
+  // Add renamed properties at the beginning for proper sorting
+  const reorderedProperties = { ...renamedProperties, ...filteredProperties };
   
-  // Add Last Edited By field with "z. " prefix even if no Done property
-  filteredProperties["z. Last Edited By"] = {
-    type: "last_edited_by", 
+  // Add Last Edited By field with prefix for alphabetical sorting (to be last)
+  const lastEditedByFieldName = getPrefixedName('Last Edited By');
+  reorderedProperties[lastEditedByFieldName] = {
+    type: 'last_edited_by',
     last_edited_by: {}
   };
   
-  return filteredProperties;
+  return reorderedProperties;
 }
 
 function filterPropertiesForCreation(properties: any): any {
@@ -85,9 +90,10 @@ function filterPropertiesForCreation(properties: any): any {
       continue;
     }
     
-    // Rename "Done" property to "1. Done" for alphabetical sorting in target database
-    if (key === 'Done') {
-      filteredProperties['1. Done'] = value;
+    // Rename properties with prefixes for alphabetical sorting in target database
+    if (shouldRenameProperty(key)) {
+      const prefixedName = getPrefixedName(key);
+      filteredProperties[prefixedName] = value;
       continue;
     }
     
@@ -108,11 +114,12 @@ describe('Property Filtering', () => {
       };
 
       const result = filterDatabaseSchemaProperties(input);
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
       expect(result).toEqual({
         'Name': { type: 'title' },
         'Status': { type: 'select' },
-        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
+        [lastEditedByFieldName]: { type: 'last_edited_by', last_edited_by: {} }
       });
     });
 
@@ -127,10 +134,11 @@ describe('Property Filtering', () => {
       };
 
       const result = filterDatabaseSchemaProperties(input);
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
       const expected = {
         ...input,
-        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
+        [lastEditedByFieldName]: { type: 'last_edited_by', last_edited_by: {} }
       };
       expect(result).toEqual(expected);
     });
@@ -161,7 +169,7 @@ describe('Property Filtering', () => {
       expect(result).toEqual({});
     });
 
-    it('should rename "Done" property to "1. Done" in page creation', () => {
+    it('should rename configured properties for page creation', () => {
       const input = {
         'Name': { type: 'title', title: [{ text: { content: 'Test' } }] },
         'Done': { type: 'checkbox', checkbox: true },
@@ -169,18 +177,19 @@ describe('Property Filtering', () => {
       };
 
       const result = filterPropertiesForCreation(input);
+      const donePrefixedName = getPrefixedName('Done');
 
       expect(result).toEqual({
         'Name': { type: 'title', title: [{ text: { content: 'Test' } }] },
-        '1. Done': { type: 'checkbox', checkbox: true },
+        [donePrefixedName]: { type: 'checkbox', checkbox: true },
         'Status': { type: 'select', select: { name: 'In Progress' } }
       });
       expect(result).not.toHaveProperty('Done'); // Original key should be replaced
     });
   });
 
-  describe('Done property positioning', () => {
-    it('should rename "Done" property to "1. Done" and place at first position', () => {
+  describe('Property positioning with configuration', () => {
+    it('should rename configured properties and place them in correct positions', () => {
       const input = {
         'Name': { type: 'title' },
         'Status': { type: 'select' },
@@ -190,15 +199,19 @@ describe('Property Filtering', () => {
 
       const result = filterDatabaseSchemaProperties(input);
       const keys = Object.keys(result);
+      const donePrefixedName = getPrefixedName('Done');
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
-      expect(keys[0]).toBe('1. Done');
+      expect(keys[0]).toBe(donePrefixedName);
       expect(keys).toContain('Name');
       expect(keys).toContain('Status');
       expect(keys).toContain('Priority');
+      expect(keys).toContain(lastEditedByFieldName);
       expect(keys).not.toContain('Done'); // Original key should be replaced
+      expect(keys[keys.length - 1]).toBe(lastEditedByFieldName); // Should be last
     });
 
-    it('should handle schema without "Done" property', () => {
+    it('should handle schema without configured properties', () => {
       const input = {
         'Name': { type: 'title' },
         'Status': { type: 'select' },
@@ -206,15 +219,16 @@ describe('Property Filtering', () => {
       };
 
       const result = filterDatabaseSchemaProperties(input);
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
       const expected = {
         ...input,
-        'z. Last Edited By': { type: 'last_edited_by', last_edited_by: {} }
+        [lastEditedByFieldName]: { type: 'last_edited_by', last_edited_by: {} }
       };
       expect(result).toEqual(expected);
     });
 
-    it('should handle different types of "Done" property', () => {
+    it('should handle different types of configured properties', () => {
       const input = {
         'Name': { type: 'title' },
         'Done': { type: 'select', select: { options: [{ name: 'Yes' }, { name: 'No' }] } },
@@ -223,13 +237,14 @@ describe('Property Filtering', () => {
 
       const result = filterDatabaseSchemaProperties(input);
       const keys = Object.keys(result);
+      const donePrefixedName = getPrefixedName('Done');
 
-      expect(keys[0]).toBe('1. Done');
-      expect(result['1. Done'].type).toBe('select');
+      expect(keys[0]).toBe(donePrefixedName);
+      expect(result[donePrefixedName].type).toBe('select');
       expect(keys).not.toContain('Done'); // Original key should be replaced
     });
 
-    it('should add "z. Last Edited By" field for alphabetical sorting', () => {
+    it('should add Last Edited By field with proper prefix', () => {
       const input = {
         'Name': { type: 'title' },
         'Status': { type: 'select' },
@@ -238,13 +253,14 @@ describe('Property Filtering', () => {
 
       const result = filterDatabaseSchemaProperties(input);
       const keys = Object.keys(result);
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
-      expect(keys).toContain('z. Last Edited By');
-      expect(result['z. Last Edited By'].type).toBe('last_edited_by');
-      expect(keys[keys.length - 1]).toBe('z. Last Edited By'); // Should be last
+      expect(keys).toContain(lastEditedByFieldName);
+      expect(result[lastEditedByFieldName].type).toBe('last_edited_by');
+      expect(keys[keys.length - 1]).toBe(lastEditedByFieldName); // Should be last
     });
 
-    it('should add "z. Last Edited By" even without Done property', () => {
+    it('should add Last Edited By field even without other configured properties', () => {
       const input = {
         'Name': { type: 'title' },
         'Status': { type: 'select' },
@@ -252,11 +268,24 @@ describe('Property Filtering', () => {
       };
 
       const result = filterDatabaseSchemaProperties(input);
+      const lastEditedByFieldName = getPrefixedName('Last Edited By');
 
-      expect(result).toHaveProperty('z. Last Edited By');
-      expect(result['z. Last Edited By'].type).toBe('last_edited_by');
+      expect(result).toHaveProperty(lastEditedByFieldName);
+      expect(result[lastEditedByFieldName].type).toBe('last_edited_by');
     });
   });
 
+  describe('Helper functions', () => {
+    it('should getPrefixedName correctly', () => {
+      expect(getPrefixedName('Done')).toBe('1. Done');
+      expect(getPrefixedName('Last Edited By')).toBe('z. Last Edited By');
+      expect(getPrefixedName('Other Property')).toBe('Other Property');
+    });
 
+    it('should shouldRenameProperty correctly', () => {
+      expect(shouldRenameProperty('Done')).toBe(true);
+      expect(shouldRenameProperty('Last Edited By')).toBe(true);
+      expect(shouldRenameProperty('Other Property')).toBe(false);
+    });
+  });
 }); 
